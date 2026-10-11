@@ -1,0 +1,1202 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local isFarming = false
+local autoStrength = false
+local isAntiLag = false
+local showFPS = false
+local antiIdle = false
+local showCoords = false
+local fpsConnection, idleConnection, coordsConnection
+local strengthConnection, strengthCharacterConnection
+local connections = {}
+local PINK = Color3.fromRGB(255, 55, 165)
+local PINK_DARK = Color3.fromRGB(115, 30, 85)
+local PANEL = Color3.fromRGB(20, 14, 27)
+local CARD = Color3.fromRGB(35, 24, 45)
+local WHITE = Color3.fromRGB(250, 240, 250)
+local MUTED = Color3.fromRGB(165, 145, 175)
+local OFF = Color3.fromRGB(55, 39, 65)
+local ON = Color3.fromRGB(255, 100, 150)
+local function removePreviousHub(container)
+    if not container then return end
+    pcall(function()
+        local old = container:FindFirstChild("JhykoHubGUI")
+        if old then
+            old:Destroy()
+        end
+    end)
+end
+pcall(function()
+    removePreviousHub(game:GetService("CoreGui"))
+end)
+pcall(function()
+    removePreviousHub(LocalPlayer:FindFirstChildOfClass("PlayerGui"))
+end)
+if type(gethui) == "function" then
+    pcall(function()
+        removePreviousHub(gethui())
+    end)
+end
+local antiLagOriginals = {}
+local originalQualityLevel
+local antiLagQualitySaved = false
+local function saveAndDisable(instance, propertyName)
+    local ok, value = pcall(function()
+        return instance[propertyName]
+    end)
+    if not ok then return end
+    if antiLagOriginals[instance] == nil then
+        antiLagOriginals[instance] = {}
+    end
+    if antiLagOriginals[instance][propertyName] == nil then
+        antiLagOriginals[instance][propertyName] = value
+    end
+    pcall(function()
+        instance[propertyName] = false
+    end)
+end
+local function applyAntiLag(enabled)
+    if enabled then
+        for _, instance in ipairs(Lighting:GetDescendants()) do
+            if instance:IsA("PostEffect") then
+                saveAndDisable(instance, "Enabled")
+            end
+        end
+        for _, instance in ipairs(Workspace:GetDescendants()) do
+            if instance:IsA("ParticleEmitter")
+                or instance:IsA("Trail")
+                or instance:IsA("Beam")
+                or instance:IsA("Fire")
+                or instance:IsA("Smoke")
+                or instance:IsA("Sparkles") then
+                saveAndDisable(instance, "Enabled")
+            end
+        end
+        if not antiLagQualitySaved then
+            local ok, quality = pcall(function()
+                return settings().Rendering.QualityLevel
+            end)
+            if ok then
+                originalQualityLevel = quality
+                antiLagQualitySaved = true
+            end
+        end
+        pcall(function()
+            settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        end)
+    else
+        for instance, properties in pairs(antiLagOriginals) do
+            if instance and instance.Parent then
+                for propertyName, originalValue in pairs(properties) do
+                    pcall(function()
+                        instance[propertyName] = originalValue
+                    end)
+                end
+            end
+        end
+        table.clear(antiLagOriginals)
+        if antiLagQualitySaved then
+            pcall(function()
+                settings().Rendering.QualityLevel = originalQualityLevel
+            end)
+        end
+        originalQualityLevel = nil
+        antiLagQualitySaved = false
+    end
+end
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "JhykoHubGUI"
+ScreenGui.ResetOnSpawn = false
+if type(gethui) == "function" then
+    ScreenGui.Parent = gethui()
+elseif syn and syn.protect_gui then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+else
+    ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+end
+local FPSLabel = Instance.new("TextLabel")
+FPSLabel.Name = "FPSLabel"
+FPSLabel.Parent = ScreenGui
+FPSLabel.Size = UDim2.new(0, 145, 0, 34)
+FPSLabel.Position = UDim2.new(1, -160, 0, 12)
+FPSLabel.BackgroundColor3 = Color3.fromRGB(13, 10, 18)
+FPSLabel.BorderSizePixel = 0
+FPSLabel.Font = Enum.Font.SourceSansBold
+FPSLabel.TextSize = 18
+FPSLabel.TextColor3 = PINK
+FPSLabel.Text = "FPS: --"
+FPSLabel.Visible = false
+FPSLabel.Active = true
+FPSLabel.Selectable = true
+local FPSCorner = Instance.new("UICorner")
+FPSCorner.CornerRadius = UDim.new(0, 8)
+FPSCorner.Parent = FPSLabel
+local FPSStroke = Instance.new("UIStroke")
+FPSStroke.Color = PINK
+FPSStroke.Thickness = 1
+FPSStroke.Parent = FPSLabel
+local CoordsLabel = Instance.new("TextLabel")
+CoordsLabel.Name = "CoordsLabel"
+CoordsLabel.Parent = ScreenGui
+CoordsLabel.Size = UDim2.new(0, 255, 0, 34)
+CoordsLabel.Position = UDim2.new(0, 12, 0, 12)
+CoordsLabel.BackgroundColor3 = Color3.fromRGB(13, 10, 18)
+CoordsLabel.BorderSizePixel = 0
+CoordsLabel.Font = Enum.Font.SourceSansBold
+CoordsLabel.TextSize = 16
+CoordsLabel.TextColor3 = PINK
+CoordsLabel.Text = "X: --   Y: --   Z: --"
+CoordsLabel.Visible = false
+local CoordsCorner = Instance.new("UICorner")
+CoordsCorner.CornerRadius = UDim.new(0, 8)
+CoordsCorner.Parent = CoordsLabel
+local CoordsStroke = Instance.new("UIStroke")
+CoordsStroke.Color = PINK
+CoordsStroke.Thickness = 1
+CoordsStroke.Parent = CoordsLabel
+-- Arrastrar el contador FPS
+local fpsDragging = false
+local fpsDragStart, fpsStartPosition
+FPSLabel.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        fpsDragging = true
+        fpsDragStart = input.Position
+        fpsStartPosition = FPSLabel.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                fpsDragging = false
+            end
+        end)
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if fpsDragging and fpsDragStart and fpsStartPosition
+        and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - fpsDragStart
+        FPSLabel.Position = UDim2.new(
+            fpsStartPosition.X.Scale,
+            fpsStartPosition.X.Offset + delta.X,
+            fpsStartPosition.Y.Scale,
+            fpsStartPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.Size = UDim2.new(0, 650, 0, 420)
+MainFrame.Position = UDim2.new(0.5, -325, 0.5, -210)
+MainFrame.BackgroundColor3 = PANEL
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+-- Recorta el contenido mientras el panel se encoge a la barra superior.
+MainFrame.ClipsDescendants = true
+MainFrame.Visible = true
+-- Escala adaptable para pantallas pequeñas (móvil/tablet) y escritorio.
+local HubScale = Instance.new("UIScale")
+HubScale.Name = "ResponsiveScale"
+HubScale.Parent = MainFrame
+local function updateHubScale()
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    local viewport = camera.ViewportSize
+    local scaleX = viewport.X / 700
+    local scaleY = viewport.Y / 500
+    HubScale.Scale = math.clamp(math.min(1, scaleX, scaleY), 0.55, 1)
+end
+updateHubScale()
+local cameraConnection
+local function bindCameraViewport()
+    if cameraConnection then
+        cameraConnection:Disconnect()
+        cameraConnection = nil
+    end
+    local camera = Workspace.CurrentCamera
+    if camera then
+        cameraConnection = camera:GetPropertyChangedSignal("ViewportSize"):Connect(updateHubScale)
+    end
+end
+bindCameraViewport()
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    bindCameraViewport()
+    updateHubScale()
+end)
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 16)
+MainCorner.Parent = MainFrame
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Parent = MainFrame
+MainStroke.Color = PINK
+MainStroke.Thickness = 2
+MainStroke.Transparency = 0.08
+local MainGradient = Instance.new("UIGradient")
+MainGradient.Parent = MainFrame
+MainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(28, 15, 34)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 9, 15))
+})
+MainGradient.Rotation = 90
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Parent = MainFrame
+TopBar.Size = UDim2.new(1, 0, 0, 46)
+TopBar.BackgroundColor3 = Color3.fromRGB(40, 18, 43)
+TopBar.BorderSizePixel = 0
+TopBar.Active = true
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 14)
+TopCorner.Parent = TopBar
+local TopGradient = Instance.new("UIGradient")
+TopGradient.Parent = TopBar
+TopGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(75, 25, 68)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 17, 34))
+})
+local Title = Instance.new("TextLabel")
+Title.Parent = TopBar
+Title.Size = UDim2.new(1, -72, 1, 0)
+Title.Position = UDim2.new(0, 16, 0, 0)
+Title.Text = "MUSCLE LIFTING HUB  |  v1.2.0"
+Title.Font = Enum.Font.SourceSansBold
+Title.TextSize = 21
+Title.TextColor3 = PINK
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.BackgroundTransparency = 1
+-- Botón para minimizar/restaurar el Hub (también funciona en móvil)
+local MinimizeBtn = Instance.new("TextButton")
+MinimizeBtn.Name = "MinimizeBtn"
+MinimizeBtn.Parent = TopBar
+MinimizeBtn.Size = UDim2.new(0, 34, 0, 30)
+MinimizeBtn.Position = UDim2.new(1, -43, 0.5, -15)
+MinimizeBtn.BackgroundColor3 = Color3.fromRGB(70, 35, 72)
+MinimizeBtn.BorderSizePixel = 0
+MinimizeBtn.Text = "−"
+MinimizeBtn.Font = Enum.Font.SourceSansBold
+MinimizeBtn.TextSize = 25
+MinimizeBtn.TextColor3 = WHITE
+MinimizeBtn.AutoButtonColor = false
+MinimizeBtn.ZIndex = 10
+local MinimizeCorner = Instance.new("UICorner")
+MinimizeCorner.CornerRadius = UDim.new(0, 8)
+MinimizeCorner.Parent = MinimizeBtn
+MinimizeBtn.MouseEnter:Connect(function()
+    TweenService:Create(MinimizeBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(130, 45, 110)}):Play()
+end)
+MinimizeBtn.MouseLeave:Connect(function()
+    TweenService:Create(MinimizeBtn, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(70, 35, 72)}):Play()
+end)
+local hubMinimized = false
+local savedChildVisibility = {}
+local fullHubSize = UDim2.new(0, 650, 0, 420)
+local minimizedHubSize = UDim2.new(0, 650, 0, 46)
+local minimizeTween
+local function setMinimized(minimize)
+    if not MainFrame or not MainFrame.Parent or hubMinimized == minimize then return end
+    hubMinimized = minimize
+    if minimizeTween then
+        minimizeTween:Cancel()
+        minimizeTween = nil
+    end
+    if minimize then
+        -- Guarda el estado, pero no oculta el contenido de golpe:
+        -- ClipsDescendants permite que la interfaz se recoja suavemente
+        -- hasta convertirse en la barra superior, como en el Scooter Hub.
+        table.clear(savedChildVisibility)
+        for _, child in ipairs(MainFrame:GetChildren()) do
+            if child:IsA("GuiObject") and child ~= TopBar then
+                savedChildVisibility[child] = child.Visible
+            end
+        end
+        MinimizeBtn.Text = "+"
+        minimizeTween = TweenService:Create(
+            MainFrame,
+            TweenInfo.new(0.36, Enum.EasingStyle.Quint, Enum.EasingDirection.InOut),
+            {Size = minimizedHubSize, BackgroundTransparency = 0}
+        )
+        minimizeTween:Play()
+        minimizeTween.Completed:Once(function()
+            if not MainFrame or not MainFrame.Parent or not hubMinimized then return end
+            for child in pairs(savedChildVisibility) do
+                if child and child.Parent == MainFrame then
+                    child.Visible = false
+                end
+            end
+        end)
+    else
+        -- Vuelve a mostrar el contenido antes de expandir el panel.
+        for child, wasVisible in pairs(savedChildVisibility) do
+            if child and child.Parent == MainFrame then
+                child.Visible = wasVisible
+            end
+        end
+        MinimizeBtn.Text = "−"
+        minimizeTween = TweenService:Create(
+            MainFrame,
+            TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Size = fullHubSize, BackgroundTransparency = 0}
+        )
+        minimizeTween:Play()
+        minimizeTween.Completed:Once(function()
+            if not hubMinimized then table.clear(savedChildVisibility) end
+        end)
+    end
+end
+MinimizeBtn.Activated:Connect(function()
+    setMinimized(not hubMinimized)
+end)
+local Sidebar = Instance.new("Frame")
+Sidebar.Parent = MainFrame
+Sidebar.Size = UDim2.new(0, 165, 1, -46)
+Sidebar.Position = UDim2.new(0, 0, 0, 46)
+Sidebar.BackgroundColor3 = Color3.fromRGB(17, 12, 23)
+Sidebar.BorderSizePixel = 0
+local function createTab(name, text, order)
+    local tab = Instance.new("TextButton")
+    tab.Name = name
+    tab.Parent = Sidebar
+    tab.Size = UDim2.new(1, -16, 0, 42)
+    tab.Position = UDim2.new(0, 8, 0, 12 + (order - 1) * 52)
+    tab.BackgroundColor3 = CARD
+    tab.BorderSizePixel = 0
+    tab.Text = "  |  " .. text
+    tab.Font = Enum.Font.SourceSansBold
+    tab.TextSize = 17
+    tab.TextColor3 = MUTED
+    tab.TextXAlignment = Enum.TextXAlignment.Left
+    tab.AutoButtonColor = false
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = tab
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = PINK_DARK
+    stroke.Transparency = 0.45
+    stroke.Parent = tab
+    return tab
+end
+local TabMain = createTab("TabMain", "MAIN", 1)
+local TabFarm = createTab("TabFarm", "Auto Farm", 2)
+local TabPortals = createTab("TabPortals", "Portals", 3)
+local TabMisc = createTab("TabMisc", "Misc", 4)
+local PagesContainer = Instance.new("Folder")
+PagesContainer.Name = "PagesContainer"
+PagesContainer.Parent = MainFrame
+local function createPage(name)
+    local page = Instance.new("Frame")
+    page.Name = name
+    page.Parent = PagesContainer
+    page.Size = UDim2.new(1, -185, 1, -66)
+    page.Position = UDim2.new(0, 175, 0, 56)
+    page.BackgroundTransparency = 1
+    page.Visible = false
+    return page
+end
+local MainPage = createPage("MainPage")
+local FarmPage = createPage("FarmPage")
+local PortalsPage = createPage("PortalsPage")
+local MiscPage = createPage("MiscPage")
+MainPage.Visible = true
+local MainPageTitle = Instance.new("TextLabel")
+MainPageTitle.Name = "MainPageTitle"
+MainPageTitle.Parent = MainPage
+MainPageTitle.Size = UDim2.new(1, -10, 0, 42)
+MainPageTitle.Position = UDim2.new(0, 5, 0, 8)
+MainPageTitle.BackgroundTransparency = 1
+MainPageTitle.Text = "JHYKO HUB"
+MainPageTitle.Font = Enum.Font.SourceSansBold
+MainPageTitle.TextSize = 30
+MainPageTitle.TextColor3 = PINK
+MainPageTitle.TextXAlignment = Enum.TextXAlignment.Left
+local MainSubtitle = Instance.new("TextLabel")
+MainSubtitle.Parent = MainPage
+MainSubtitle.Size = UDim2.new(1, -10, 0, 28)
+MainSubtitle.Position = UDim2.new(0, 5, 0, 49)
+MainSubtitle.BackgroundTransparency = 1
+MainSubtitle.Text = "Bienvenido al mejor script de muscle lifting"
+MainSubtitle.Font = Enum.Font.SourceSans
+MainSubtitle.TextSize = 17
+MainSubtitle.TextColor3 = MUTED
+MainSubtitle.TextXAlignment = Enum.TextXAlignment.Left
+local MainInfoCard = Instance.new("Frame")
+MainInfoCard.Name = "MainInfoCard"
+MainInfoCard.Parent = MainPage
+MainInfoCard.Size = UDim2.new(1, -10, 0, 100)
+MainInfoCard.Position = UDim2.new(0, 5, 0, 94)
+MainInfoCard.BackgroundColor3 = CARD
+MainInfoCard.BorderSizePixel = 0
+local MainInfoCorner = Instance.new("UICorner")
+MainInfoCorner.CornerRadius = UDim.new(0, 12)
+MainInfoCorner.Parent = MainInfoCard
+local MainInfoStroke = Instance.new("UIStroke")
+MainInfoStroke.Color = PINK_DARK
+MainInfoStroke.Thickness = 1.5
+MainInfoStroke.Transparency = 0.15
+MainInfoStroke.Parent = MainInfoCard
+local MainInfoTitle = Instance.new("TextLabel")
+MainInfoTitle.Parent = MainInfoCard
+MainInfoTitle.Size = UDim2.new(1, -24, 0, 34)
+MainInfoTitle.Position = UDim2.new(0, 12, 0, 10)
+MainInfoTitle.BackgroundTransparency = 1
+MainInfoTitle.Text = "⌨  Para ocultar el Hub, presione H"
+MainInfoTitle.Font = Enum.Font.SourceSansBold
+MainInfoTitle.TextSize = 20
+MainInfoTitle.TextColor3 = PINK
+MainInfoTitle.TextXAlignment = Enum.TextXAlignment.Left
+MainInfoTitle.TextWrapped = true
+local MainInfoDescription = Instance.new("TextLabel")
+MainInfoDescription.Parent = MainInfoCard
+MainInfoDescription.Size = UDim2.new(1, -24, 0, 36)
+MainInfoDescription.Position = UDim2.new(0, 12, 0, 49)
+MainInfoDescription.BackgroundTransparency = 1
+MainInfoDescription.Text = "Presiona H otra vez para mostrarlo. Usa las pestañas para navegar."
+MainInfoDescription.Font = Enum.Font.SourceSans
+MainInfoDescription.TextSize = 16
+MainInfoDescription.TextColor3 = WHITE
+MainInfoDescription.TextXAlignment = Enum.TextXAlignment.Left
+MainInfoDescription.TextWrapped = true
+local MainFeatures = Instance.new("TextLabel")
+MainFeatures.Parent = MainPage
+MainFeatures.Size = UDim2.new(1, -10, 0, 100)
+MainFeatures.Position = UDim2.new(0, 5, 0, 210)
+MainFeatures.BackgroundTransparency = 1
+MainFeatures.Text = "  • Auto Farm: opciones de farm\n\n  • Portals: destinos guardados\n\n  • Misc: utilidades del Hub"
+MainFeatures.Font = Enum.Font.SourceSans
+MainFeatures.TextSize = 18
+MainFeatures.TextColor3 = WHITE
+MainFeatures.TextXAlignment = Enum.TextXAlignment.Left
+MainFeatures.TextYAlignment = Enum.TextYAlignment.Top
+local function createRow(parent, name, text, y, height)
+    local row = Instance.new("Frame")
+    row.Name = name
+    row.Parent = parent
+    row.Size = UDim2.new(1, 0, 0, height or 49)
+    row.Position = UDim2.new(0, 0, 0, y or 0)
+    row.BackgroundColor3 = CARD
+    row.BorderSizePixel = 0
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 9)
+    corner.Parent = row
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = PINK_DARK
+    stroke.Transparency = 0.55
+    stroke.Thickness = 1
+    stroke.Parent = row
+    local label = Instance.new("TextLabel")
+    label.Parent = row
+    label.Size = UDim2.new(0.68, -10, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Text = text
+    label.Font = Enum.Font.SourceSansSemibold
+    label.TextSize = 17
+    label.TextColor3 = WHITE
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    return row, label
+end
+local function createSwitch(parent, name)
+    local toggle = Instance.new("TextButton")
+    toggle.Name = name
+    toggle.Parent = parent
+    toggle.Size = UDim2.new(0, 56, 0, 28)
+    toggle.Position = UDim2.new(1, -68, 0.5, -14)
+    toggle.BackgroundColor3 = OFF
+    toggle.BorderSizePixel = 0
+    toggle.Text = ""
+    toggle.AutoButtonColor = false
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0)
+    corner.Parent = toggle
+    local knob = Instance.new("Frame")
+    knob.Parent = toggle
+    knob.Size = UDim2.new(0, 22, 0, 22)
+    knob.Position = UDim2.new(0, 3, 0.5, -11)
+    knob.BackgroundColor3 = WHITE
+    knob.BorderSizePixel = 0
+    local knobCorner = Instance.new("UICorner")
+    knobCorner.CornerRadius = UDim.new(1, 0)
+    knobCorner.Parent = knob
+    return toggle, knob
+end
+local function setSwitch(toggle, knob, enabled)
+    local info = TweenInfo.new(
+        0.2,
+        Enum.EasingStyle.Quad,
+        Enum.EasingDirection.Out
+    )
+    TweenService:Create(toggle, info, {
+        BackgroundColor3 = enabled and ON or OFF
+    }):Play()
+    TweenService:Create(knob, info, {
+        Position = enabled
+            and UDim2.new(1, -25, 0.5, -11)
+            or UDim2.new(0, 3, 0.5, -11)
+    }):Play()
+end
+local OptionRow, OptionLabel = createRow(
+    FarmPage, "OptionRow", "AutoFarm Kills", 0, 58
+)
+OptionLabel.TextSize = 19
+OptionLabel.Font = Enum.Font.SourceSansBold
+local ToggleSwitch, SwitchKnob = createSwitch(
+    OptionRow, "ToggleSwitch"
+)
+-- NUEVA OPCIÓN: AUTOFARM FUERZA
+local StrengthRow, StrengthLabel = createRow(
+    FarmPage, "StrengthRow", "AutoFarm Fuerza", 68, 58
+)
+StrengthLabel.TextSize = 19
+StrengthLabel.Font = Enum.Font.SourceSansBold
+local StrengthToggle, StrengthKnob = createSwitch(
+    StrengthRow, "StrengthToggle"
+)
+-- Mantener Weight equipado mientras la opción esté activa
+local function equipWeight()
+    if not autoStrength then return end
+    local character = LocalPlayer.Character
+    local backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not character or not backpack then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return end
+    local weight = character:FindFirstChild("Weight")
+        or backpack:FindFirstChild("Weight")
+    if weight and weight:IsA("Tool") and weight.Parent ~= character then
+        pcall(function()
+            humanoid:EquipTool(weight)
+        end)
+    end
+end
+local function startStrengthFarm()
+    if strengthConnection then
+        strengthConnection:Disconnect()
+        strengthConnection = nil
+    end
+    if strengthCharacterConnection then
+        strengthCharacterConnection:Disconnect()
+        strengthCharacterConnection = nil
+    end
+    -- Revisar si Weight sigue equipado
+    strengthConnection = RunService.Heartbeat:Connect(function()
+        if autoStrength then
+            equipWeight()
+        end
+    end)
+    -- Volver a equiparlo después de morir y reaparecer
+    strengthCharacterConnection = LocalPlayer.CharacterAdded:Connect(function()
+        if not autoStrength then return end
+        task.spawn(function()
+            local backpack = LocalPlayer:WaitForChild("Backpack", 10)
+            if not backpack or not autoStrength then return end
+            local character = LocalPlayer.Character
+            if not character then
+                character = LocalPlayer.CharacterAdded:Wait()
+            end
+            if not autoStrength then return end
+            character:WaitForChild("Humanoid", 10)
+            task.wait(0.5)
+            if autoStrength then
+                equipWeight()
+            end
+        end)
+    end)
+    -- Intento inicial
+    task.spawn(function()
+        for _ = 1, 20 do
+            if not autoStrength then return end
+            equipWeight()
+            local character = LocalPlayer.Character
+            local backpack = LocalPlayer:FindFirstChild("Backpack")
+            local weight = (character and character:FindFirstChild("Weight"))
+                or (backpack and backpack:FindFirstChild("Weight"))
+            if weight and character and weight.Parent == character then
+                return
+            end
+            task.wait(0.25)
+        end
+    end)
+end
+local PortalsTitle = Instance.new("TextLabel")
+PortalsTitle.Parent = PortalsPage
+PortalsTitle.Size = UDim2.new(1, -10, 0, 32)
+PortalsTitle.Position = UDim2.new(0, 5, 0, 4)
+PortalsTitle.BackgroundTransparency = 1
+PortalsTitle.Text = "PORTALS"
+PortalsTitle.Font = Enum.Font.SourceSansBold
+PortalsTitle.TextSize = 23
+PortalsTitle.TextColor3 = PINK
+PortalsTitle.TextXAlignment = Enum.TextXAlignment.Left
+local PortalsInfo = Instance.new("TextLabel")
+PortalsInfo.Parent = PortalsPage
+PortalsInfo.Size = UDim2.new(1, -10, 0, 66)
+PortalsInfo.Position = UDim2.new(0, 5, 0, 40)
+PortalsInfo.BackgroundColor3 = CARD
+PortalsInfo.BorderSizePixel = 0
+PortalsInfo.Text = "Elige un destino para teletransportarte una vez.\nUsa la barra para ver todos los portales."
+PortalsInfo.Font = Enum.Font.SourceSans
+PortalsInfo.TextSize = 16
+PortalsInfo.TextColor3 = WHITE
+PortalsInfo.TextWrapped = true
+PortalsInfo.TextXAlignment = Enum.TextXAlignment.Left
+PortalsInfo.TextYAlignment = Enum.TextYAlignment.Center
+local PortalsInfoPadding = Instance.new("UIPadding")
+PortalsInfoPadding.PaddingLeft = UDim.new(0, 10)
+PortalsInfoPadding.PaddingRight = UDim.new(0, 8)
+PortalsInfoPadding.Parent = PortalsInfo
+local PortalsInfoCorner = Instance.new("UICorner")
+PortalsInfoCorner.CornerRadius = UDim.new(0, 8)
+PortalsInfoCorner.Parent = PortalsInfo
+local PortalList = Instance.new("ScrollingFrame")
+PortalList.Name = "PortalList"
+PortalList.Parent = PortalsPage
+PortalList.Size = UDim2.new(1, -10, 1, -120)
+PortalList.Position = UDim2.new(0, 5, 0, 114)
+PortalList.BackgroundTransparency = 1
+PortalList.BorderSizePixel = 0
+PortalList.ScrollBarThickness = 7
+PortalList.ScrollBarImageColor3 = PINK
+PortalList.CanvasSize = UDim2.new(0, 0, 0, 0)
+PortalList.AutomaticCanvasSize = Enum.AutomaticSize.Y
+local PortalListLayout = Instance.new("UIListLayout")
+PortalListLayout.Parent = PortalList
+PortalListLayout.Padding = UDim.new(0, 7)
+PortalListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+local PortalListPadding = Instance.new("UIPadding")
+PortalListPadding.Parent = PortalList
+PortalListPadding.PaddingBottom = UDim.new(0, 5)
+PortalListPadding.PaddingRight = UDim.new(0, 5)
+local function createPortalButton(label, order, x, y, z)
+    local button = Instance.new("TextButton")
+    button.Name = "Portal_" .. tostring(order)
+    button.Parent = PortalList
+    button.LayoutOrder = order
+    button.Size = UDim2.new(1, -5, 0, 43)
+    button.BackgroundColor3 = CARD
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    button.Text = "  " .. label
+    button.Font = Enum.Font.SourceSansSemibold
+    button.TextSize = 17
+    button.TextColor3 = WHITE
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = button
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = PINK_DARK
+    stroke.Transparency = 0.45
+    stroke.Parent = button
+    button.MouseEnter:Connect(function()
+        if button.Parent then
+            TweenService:Create(button, TweenInfo.new(0.16), {
+                BackgroundColor3 = Color3.fromRGB(75, 30, 69)
+            }):Play()
+        end
+    end)
+    button.MouseLeave:Connect(function()
+        if button.Parent then
+            TweenService:Create(button, TweenInfo.new(0.16), {
+                BackgroundColor3 = CARD
+            }):Play()
+        end
+    end)
+    button.MouseButton1Click:Connect(function()
+        local character = LocalPlayer.Character
+        local root = character
+            and character:FindFirstChild("HumanoidRootPart")
+        if not root then
+            warn("Jhyko Hub: el personaje no está disponible para teletransportarse.")
+            return
+        end
+        root.CFrame = CFrame.new(x, y, z)
+        print("Jhyko Hub: teletransporte a " .. label)
+    end)
+end
+-- ZONA SEGURA: PRIMER PORTAL
+createPortalButton("🛡️ Zona Segura", 0, -39.5, 56.4, 1989.8)
+-- PORTALES ORIGINALES
+createPortalButton('Volcan Gym "1 Rebirt"', 1, -2585.6, 10.5, -415.3)
+createPortalButton('Galaxia Gym "5 Rebirt"', 2, 2250.8, 6.4, 1073.2)
+createPortalButton('Legendario Gym "15 Rebirt"', 3, -6759.8, 6.4, -1284.9)
+createPortalButton('Vacío Carmesí Gym', 4, 4615.3, 990.6, -3899.1)
+createPortalButton('Mundo 2', 5, -1368.6, 6.2, -189.5)
+createPortalButton('Jungle Gym "30 Rebirt"', 6, -8685.6, 5.9, 2392.3)
+createPortalButton('Muscle King Gym "5 Rebirt"', 7, -8625.9, 16.3, -5730.5)
+createPortalButton('Cementerio', 8, -2839.4, 0.8, 2194.3)
+local MiscRow, MiscLabel = createRow(
+    MiscPage, "MiscRow", "Reducir Lag (Anti-Lag)", 0, 49
+)
+local MiscToggle, MiscKnob = createSwitch(MiscRow, "MiscToggle")
+local FPSRow, FPSOptionLabel = createRow(
+    MiscPage, "FPSRow", "Mostrar FPS", 56, 49
+)
+local FPSToggle, FPSKnob = createSwitch(FPSRow, "FPSToggle")
+local IdleRow, IdleLabel = createRow(
+    MiscPage, "IdleRow", "Evitar inactividad", 112, 49
+)
+IdleLabel.Size = UDim2.new(0.72, -10, 1, 0)
+local IdleToggle, IdleKnob = createSwitch(IdleRow, "IdleToggle")
+local CoordsRow, CoordsOptionLabel = createRow(
+    MiscPage, "CoordsRow", "Mostrar coordenadas", 168, 49
+)
+CoordsOptionLabel.Size = UDim2.new(0.72, -10, 1, 0)
+-- Switch corregido: se crea directamente dentro de CoordsRow
+local CoordsToggle, CoordsKnob = createSwitch(
+    CoordsRow, "CoordsToggle"
+)
+local CloseRow, CloseLabel = createRow(
+    MiscPage, "CloseRow", "Cerrar Hub / Script", 224, 49
+)
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Parent = CloseRow
+CloseBtn.Size = UDim2.new(0, 85, 0, 30)
+CloseBtn.Position = UDim2.new(1, -95, 0.5, -15)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(190, 42, 85)
+CloseBtn.BorderSizePixel = 0
+CloseBtn.Text = "Cerrar"
+CloseBtn.Font = Enum.Font.SourceSansBold
+CloseBtn.TextSize = 16
+CloseBtn.TextColor3 = WHITE
+CloseBtn.AutoButtonColor = false
+local CloseBtnCorner = Instance.new("UICorner")
+CloseBtnCorner.CornerRadius = UDim.new(0, 7)
+CloseBtnCorner.Parent = CloseBtn
+CloseBtn.MouseEnter:Connect(function()
+    TweenService:Create(CloseBtn, TweenInfo.new(0.16), {
+        BackgroundColor3 = Color3.fromRGB(235, 75, 105)
+    }):Play()
+end)
+CloseBtn.MouseLeave:Connect(function()
+    TweenService:Create(CloseBtn, TweenInfo.new(0.16), {
+        BackgroundColor3 = Color3.fromRGB(190, 42, 85)
+    }):Play()
+end)
+local allTabs = {TabMain, TabFarm, TabPortals, TabMisc}
+local function refreshTabs()
+    local activeTab =
+        (MainPage.Visible and TabMain)
+        or (FarmPage.Visible and TabFarm)
+        or (PortalsPage.Visible and TabPortals)
+        or TabMisc
+    for _, tab in ipairs(allTabs) do
+        local active = tab == activeTab
+        tab.BackgroundColor3 = active
+            and Color3.fromRGB(75, 27, 65)
+            or CARD
+        tab.TextColor3 = active and PINK or MUTED
+    end
+end
+local function showPage(page)
+    MainPage.Visible = page == MainPage
+    FarmPage.Visible = page == FarmPage
+    PortalsPage.Visible = page == PortalsPage
+    MiscPage.Visible = page == MiscPage
+    refreshTabs()
+end
+TabMain.MouseButton1Click:Connect(function()
+    showPage(MainPage)
+end)
+TabFarm.MouseButton1Click:Connect(function()
+    showPage(FarmPage)
+end)
+TabPortals.MouseButton1Click:Connect(function()
+    showPage(PortalsPage)
+end)
+TabMisc.MouseButton1Click:Connect(function()
+    showPage(MiscPage)
+end)
+for _, tab in ipairs(allTabs) do
+    tab.MouseEnter:Connect(function()
+        if tab.Parent then
+            TweenService:Create(tab, TweenInfo.new(0.16), {
+                BackgroundColor3 = Color3.fromRGB(65, 29, 62)
+            }):Play()
+        end
+    end)
+    tab.MouseLeave:Connect(function()
+        if tab.Parent then
+            refreshTabs()
+        end
+    end)
+end
+refreshTabs()
+local dragging = false
+local dragInput, dragStart, startPos
+local function update(input)
+    local delta = input.Position - dragStart
+    MainFrame.Position = UDim2.new(
+        startPos.X.Scale,
+        startPos.X.Offset + delta.X,
+        startPos.Y.Scale,
+        startPos.Y.Offset + delta.Y
+    )
+end
+TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+TopBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+table.insert(connections, UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end))
+local NotifyFrame = Instance.new("Frame")
+NotifyFrame.Name = "NotifyFrame"
+NotifyFrame.Parent = ScreenGui
+NotifyFrame.Size = UDim2.new(0, 230, 0, 42)
+NotifyFrame.Position = UDim2.new(1, -245, 1, -55)
+NotifyFrame.BackgroundColor3 = Color3.fromRGB(13, 10, 18)
+NotifyFrame.BorderSizePixel = 0
+NotifyFrame.Visible = false
+local NotifyCorner = Instance.new("UICorner")
+NotifyCorner.CornerRadius = UDim.new(0, 8)
+NotifyCorner.Parent = NotifyFrame
+local NotifyStroke = Instance.new("UIStroke")
+NotifyStroke.Color = PINK
+NotifyStroke.Thickness = 1
+NotifyStroke.Parent = NotifyFrame
+local NotifyText = Instance.new("TextLabel")
+NotifyText.Parent = NotifyFrame
+NotifyText.Size = UDim2.new(1, -10, 1, 0)
+NotifyText.Position = UDim2.new(0, 5, 0, 0)
+NotifyText.BackgroundTransparency = 1
+NotifyText.Font = Enum.Font.SourceSansBold
+NotifyText.TextSize = 15
+NotifyText.TextColor3 = PINK
+NotifyText.Text = ""
+local notifyThread
+local function showNotification(message)
+    NotifyText.Text = message
+    NotifyFrame.Visible = true
+    if notifyThread then
+        task.cancel(notifyThread)
+    end
+    notifyThread = task.delay(2, function()
+        if NotifyFrame and NotifyFrame.Parent then
+            NotifyFrame.Visible = false
+        end
+    end)
+end
+local function startFarming()
+    task.spawn(function()
+        while isFarming do
+            local playerList = Players:GetPlayers()
+            local targetFound = false
+            for _, targetPlayer in ipairs(playerList) do
+                if not isFarming then break end
+                if targetPlayer ~= LocalPlayer then
+                    local targetChar = targetPlayer.Character
+                    local targetHum = targetChar
+                        and targetChar:FindFirstChildOfClass("Humanoid")
+                    local targetHRP = targetChar
+                        and targetChar:FindFirstChild("HumanoidRootPart")
+                    if targetHum and targetHum.Health > 0
+                        and targetHRP and targetChar.Parent == workspace then
+                        targetFound = true
+                        local startTime = tick()
+                        local maxAttackTime = 4
+                        while isFarming
+                            and targetHum
+                            and targetHum.Health > 0
+                            and targetHum:GetState() ~= Enum.HumanoidStateType.Dead
+                            and targetChar.Parent == workspace
+                            and (tick() - startTime) < maxAttackTime do
+                            local char = LocalPlayer.Character
+                            local hrp = char
+                                and char:FindFirstChild("HumanoidRootPart")
+                            local backpack = LocalPlayer:FindFirstChild("Backpack")
+                            if char and hrp and backpack then
+                                local punch = backpack:FindFirstChild("Punch")
+                                    or char:FindFirstChild("Punch")
+                                if punch then
+                                    local humanoid =
+                                        char:FindFirstChildOfClass("Humanoid")
+                                    if humanoid and punch.Parent ~= char then
+                                        humanoid:EquipTool(punch)
+                                    end
+                                    hrp.CFrame =
+                                        targetHRP.CFrame + Vector3.new(0, 3, 0)
+                                    hrp.AssemblyLinearVelocity =
+                                        Vector3.new(0, 0, 0)
+                                    hrp.AssemblyAngularVelocity =
+                                        Vector3.new(0, 0, 0)
+                                    pcall(function()
+                                        punch:Activate()
+                                    end)
+                                end
+                            end
+                            task.wait(0.08)
+                        end
+                        task.wait(0.1)
+                    end
+                end
+            end
+            if not targetFound then
+                task.wait(0.5)
+            end
+        end
+    end)
+end
+ToggleSwitch.MouseButton1Click:Connect(function()
+    isFarming = not isFarming
+    setSwitch(ToggleSwitch, SwitchKnob, isFarming)
+    if isFarming then
+        startFarming()
+        showNotification("FARM KILLS: Activado")
+    else
+        local char = LocalPlayer.Character
+        if char then
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:UnequipTools()
+            end
+        end
+        showNotification("FARM KILLS: Desactivado")
+    end
+end)
+StrengthToggle.MouseButton1Click:Connect(function()
+    autoStrength = not autoStrength
+    setSwitch(StrengthToggle, StrengthKnob, autoStrength)
+    if autoStrength then
+        startStrengthFarm()
+        equipWeight()
+        showNotification("AUTOFARM FUERZA: Activado")
+    else
+        if strengthConnection then
+            strengthConnection:Disconnect()
+            strengthConnection = nil
+        end
+        if strengthCharacterConnection then
+            strengthCharacterConnection:Disconnect()
+            strengthCharacterConnection = nil
+        end
+        -- Al apagarlo, dejar de mantener Weight equipado.
+        local character = LocalPlayer.Character
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        local weight = character and character:FindFirstChild("Weight")
+        if weight and backpack and weight:IsA("Tool") then
+            pcall(function()
+                weight.Parent = backpack
+            end)
+        end
+        showNotification("AUTOFARM FUERZA: Desactivado")
+    end
+end)
+MiscToggle.MouseButton1Click:Connect(function()
+    isAntiLag = not isAntiLag
+    setSwitch(MiscToggle, MiscKnob, isAntiLag)
+    applyAntiLag(isAntiLag)
+    showNotification(isAntiLag
+        and "REDUCIR LAG: Activado"
+        or "REDUCIR LAG: Desactivado")
+end)
+FPSToggle.MouseButton1Click:Connect(function()
+    showFPS = not showFPS
+    setSwitch(FPSToggle, FPSKnob, showFPS)
+    FPSLabel.Visible = showFPS
+    if showFPS then
+        if fpsConnection then
+            fpsConnection:Disconnect()
+            fpsConnection = nil
+        end
+        local frameCount = 0
+        local elapsed = 0
+        fpsConnection = RunService.RenderStepped:Connect(function(dt)
+            frameCount = frameCount + 1
+            elapsed = elapsed + dt
+            if elapsed >= 0.5 then
+                local fps = math.floor(frameCount / elapsed + 0.5)
+                FPSLabel.Text = "FPS: " .. tostring(fps)
+                frameCount = 0
+                elapsed = 0
+            end
+        end)
+        table.insert(connections, fpsConnection)
+        showNotification("FPS: Activado")
+    else
+        if fpsConnection then
+            fpsConnection:Disconnect()
+            fpsConnection = nil
+        end
+        showNotification("FPS: Desactivado")
+    end
+end)
+CoordsToggle.MouseButton1Click:Connect(function()
+    showCoords = not showCoords
+    setSwitch(CoordsToggle, CoordsKnob, showCoords)
+    CoordsLabel.Visible = showCoords
+    if showCoords then
+        if coordsConnection then
+            coordsConnection:Disconnect()
+            coordsConnection = nil
+        end
+        coordsConnection = RunService.RenderStepped:Connect(function()
+            local character = LocalPlayer.Character
+            local root = character
+                and character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local position = root.Position
+                CoordsLabel.Text = string.format(
+                    "X: %.1f   Y: %.1f   Z: %.1f",
+                    position.X, position.Y, position.Z
+                )
+            else
+                CoordsLabel.Text = "X: --   Y: --   Z: --"
+            end
+        end)
+        table.insert(connections, coordsConnection)
+        showNotification("Coordenadas: Activadas")
+    else
+        if coordsConnection then
+            coordsConnection:Disconnect()
+            coordsConnection = nil
+        end
+        showNotification("Coordenadas: Desactivadas")
+    end
+end)
+IdleToggle.MouseButton1Click:Connect(function()
+    antiIdle = not antiIdle
+    setSwitch(IdleToggle, IdleKnob, antiIdle)
+    if antiIdle then
+        if idleConnection then
+            idleConnection:Disconnect()
+            idleConnection = nil
+        end
+        -- Rice Anti-AFK integrado: no crea una GUI adicional.
+        idleConnection = LocalPlayer.Idled:Connect(function()
+            task.spawn(function()
+                pcall(function()
+                    VirtualUser:Button2Down(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
+                    task.wait(1)
+                    VirtualUser:Button2Up(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
+                end)
+            end)
+        end)
+        table.insert(connections, idleConnection)
+        showNotification("Anti-inactividad: Activado")
+    else
+        if idleConnection then
+            idleConnection:Disconnect()
+            idleConnection = nil
+        end
+        showNotification("Anti-inactividad: Desactivado")
+    end
+end)
+local function closeHub()
+    isFarming = false
+    autoStrength = false
+    if strengthConnection then
+        strengthConnection:Disconnect()
+        strengthConnection = nil
+    end
+    if strengthCharacterConnection then
+        strengthCharacterConnection:Disconnect()
+        strengthCharacterConnection = nil
+    end
+    if isAntiLag then
+        applyAntiLag(false)
+    end
+    isAntiLag = false
+    showFPS = false
+    antiIdle = false
+    showCoords = false
+    if coordsConnection then
+        coordsConnection:Disconnect()
+        coordsConnection = nil
+    end
+    if fpsConnection then
+        fpsConnection:Disconnect()
+        fpsConnection = nil
+    end
+    if idleConnection then
+        idleConnection:Disconnect()
+        idleConnection = nil
+    end
+    for _, conn in ipairs(connections) do
+        pcall(function()
+            conn:Disconnect()
+        end)
+    end
+    pcall(function()
+        local char = LocalPlayer.Character
+        if char then
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid:UnequipTools()
+            end
+        end
+    end)
+    -- Animación de cierre antes de eliminar la interfaz
+    if MainFrame and MainFrame.Parent then
+        local closeTween = TweenService:Create(MainFrame,
+            TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+            {Size = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1})
+        closeTween:Play()
+        closeTween.Completed:Once(function()
+            if ScreenGui and ScreenGui.Parent then ScreenGui:Destroy() end
+        end)
+    else
+        ScreenGui:Destroy()
+    end
+end
+CloseBtn.MouseButton1Click:Connect(closeHub)
+local hToggleReady = true
+table.insert(connections, UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if input.KeyCode ~= Enum.KeyCode.H then return end
+    if gameProcessed or UserInputService:GetFocusedTextBox() then return end
+    if not hToggleReady or not MainFrame or not MainFrame.Parent then return end
+    hToggleReady = false
+    if MainFrame.Visible then
+        if minimizeTween then minimizeTween:Cancel() end
+        local hideTween = TweenService:Create(MainFrame,
+            TweenInfo.new(0.22, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+            {Size = UDim2.new(0, 0, 0, 0), BackgroundTransparency = 1})
+        hideTween:Play()
+        hideTween.Completed:Once(function()
+            if MainFrame and MainFrame.Parent then MainFrame.Visible = false end
+        end)
+    else
+        MainFrame.Visible = true
+        MainFrame.Size = UDim2.new(0, 0, 0, 0)
+        MainFrame.BackgroundTransparency = 1
+        local showTween = TweenService:Create(MainFrame,
+            TweenInfo.new(0.32, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Size = hubMinimized and minimizedHubSize or fullHubSize, BackgroundTransparency = 0})
+        showTween:Play()
+    end
+    task.delay(0.4, function()
+        hToggleReady = true
+    end)
+end))
+MainFrame.Size = UDim2.new(0, 0, 0, 0)
+MainFrame.BackgroundTransparency = 1
+TweenService:Create(
+    MainFrame,
+    TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+    {
+        Size = UDim2.new(0, 650, 0, 420),
+        BackgroundTransparency = 0
+    }
+):Play()
+print("MUSCLE LIFTING HUB v1.2.0 cargado")
