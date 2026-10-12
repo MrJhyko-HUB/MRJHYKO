@@ -1,0 +1,810 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then return end
+local PINK = Color3.fromRGB(255, 70, 165)
+local PINK_DARK = Color3.fromRGB(120, 35, 90)
+local PANEL = Color3.fromRGB(20, 14, 27)
+local CARD = Color3.fromRGB(35, 24, 43)
+local WHITE = Color3.fromRGB(245, 235, 248)
+local MUTED = Color3.fromRGB(158, 138, 168)
+local OFF = Color3.fromRGB(65, 48, 73)
+local ON = PINK
+local isAntiLag, showFPS, antiIdle, showCoords = false, false, false, false
+local closed = false
+local connections = {}
+local fpsConnection, idleConnection, coordsConnection
+local antiLagOriginals = {}
+local originalQualityLevel
+local qualitySaved = false
+local FPSLabel, CoordsLabel
+
+local function getRoot()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    return character:FindFirstChild("HumanoidRootPart")
+end
+
+local function addConnection(connection)
+    table.insert(connections, connection)
+    return connection
+end
+
+local function corner(object, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = object
+    return c
+end
+
+local function stroke(object, color, thickness, transparency)
+    local st = Instance.new("UIStroke")
+    st.Color = color or PINK
+    st.Thickness = thickness or 1
+    st.Transparency = transparency or 0
+    st.Parent = object
+    return st
+end
+
+local function makeLabel(parent, text, size, position, fontSize, color, bold)
+    local label = Instance.new("TextLabel")
+    label.Parent = parent
+    label.BackgroundTransparency = 1
+    label.Size = size
+    label.Position = position
+    label.Text = text
+    label.Font = bold and Enum.Font.SourceSansBold or Enum.Font.SourceSans
+    label.TextSize = fontSize or 15
+    label.TextColor3 = color or WHITE
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.TextWrapped = true
+    return label
+end
+
+local function destroyOld(container)
+    if not container then return end
+    local old = container:FindFirstChild("JhykoHubGUI")
+    if old then old:Destroy() end
+end
+
+pcall(function()
+    destroyOld(LocalPlayer:WaitForChild("PlayerGui"))
+end)
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "JhykoHubGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.fromOffset(650, 440)
+MainFrame.BackgroundColor3 = PANEL
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+corner(MainFrame, 14)
+stroke(MainFrame, PINK, 1.5, 0.12)
+
+local mainGradient = Instance.new("UIGradient")
+mainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 17, 36)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 11, 21))
+})
+mainGradient.Rotation = 25
+mainGradient.Parent = MainFrame
+
+local TopBar = Instance.new("Frame")
+TopBar.Parent = MainFrame
+TopBar.Size = UDim2.new(1, 0, 0, 42)
+TopBar.BackgroundColor3 = Color3.fromRGB(32, 20, 38)
+TopBar.BorderSizePixel = 0
+TopBar.Active = true
+corner(TopBar, 14)
+
+local topGradient = Instance.new("UIGradient")
+topGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(65, 25, 58)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 17, 34))
+})
+topGradient.Parent = TopBar
+
+local HubTitle = makeLabel(TopBar, "JHYKO HUB | v1.3.5", UDim2.new(1, -105, 1, 0),
+    UDim2.new(0, 15, 0, 0), 19, PINK, true)
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MobileMinimizeButton"
+MinimizeButton.Parent = TopBar
+MinimizeButton.AnchorPoint = Vector2.new(1, 0)
+MinimizeButton.Position = UDim2.new(1, -42, 0, 7)
+MinimizeButton.Size = UDim2.fromOffset(28, 28)
+MinimizeButton.BackgroundColor3 = PINK_DARK
+MinimizeButton.BorderSizePixel = 0
+MinimizeButton.Text = "−"
+MinimizeButton.TextColor3 = WHITE
+MinimizeButton.Font = Enum.Font.SourceSansBold
+MinimizeButton.TextSize = 22
+MinimizeButton.AutoButtonColor = true
+MinimizeButton.ZIndex = 5
+corner(MinimizeButton, 6)
+
+local HideHint = makeLabel(TopBar, "H", UDim2.fromOffset(26, 25),
+    UDim2.new(1, -38, 0, 8), 14, WHITE, true)
+HideHint.TextXAlignment = Enum.TextXAlignment.Center
+HideHint.BackgroundTransparency = 0
+HideHint.BackgroundColor3 = PINK_DARK
+corner(HideHint, 6)
+
+local Sidebar = Instance.new("Frame")
+Sidebar.Parent = MainFrame
+Sidebar.Position = UDim2.new(0, 0, 0, 42)
+Sidebar.Size = UDim2.new(0, 145, 1, -42)
+Sidebar.BackgroundColor3 = Color3.fromRGB(17, 12, 23)
+Sidebar.BorderSizePixel = 0
+
+local Content = Instance.new("Frame")
+Content.Parent = MainFrame
+Content.Position = UDim2.new(0, 155, 0, 52)
+Content.Size = UDim2.new(1, -165, 1, -62)
+Content.BackgroundTransparency = 1
+local hubMinimized = false
+local HUB_NORMAL_SIZE = UDim2.fromOffset(650, 440)
+local HUB_MINIMIZED_SIZE = UDim2.fromOffset(250, 42)
+local minimizeTween
+
+MinimizeButton.Activated:Connect(function()
+    if closed then return end
+    hubMinimized = not hubMinimized
+
+    if minimizeTween then
+        minimizeTween:Cancel()
+        minimizeTween = nil
+    end
+
+    if hubMinimized then
+        Sidebar.Visible = false
+        Content.Visible = false
+        HubTitle.Text = "JHYKO HUB"
+        MinimizeButton.Text = "+"
+        HideHint.Visible = false
+        minimizeTween = TweenService:Create(MainFrame,
+            TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+            {Size = HUB_MINIMIZED_SIZE})
+        minimizeTween:Play()
+    else
+        MainFrame.Size = HUB_MINIMIZED_SIZE
+        HubTitle.Text = "JHYKO HUB | v1.0.0"
+        MinimizeButton.Text = "−"
+        Sidebar.Visible = true
+        Content.Visible = true
+        minimizeTween = TweenService:Create(MainFrame,
+            TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            {Size = HUB_NORMAL_SIZE})
+        minimizeTween:Play()
+    end
+end)
+
+local function makeTab(text, y)
+    local b = Instance.new("TextButton")
+    b.Parent = Sidebar
+    b.Size = UDim2.new(1, -12, 0, 38)
+    b.Position = UDim2.new(0, 6, 0, y)
+    b.BackgroundColor3 = CARD
+    b.BackgroundTransparency = 1
+    b.BorderSizePixel = 0
+    b.Text = "   " .. text
+    b.TextXAlignment = Enum.TextXAlignment.Left
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 16
+    b.TextColor3 = MUTED
+    b.AutoButtonColor = false
+    corner(b, 7)
+    return b
+end
+
+local TabMain = makeTab("Main", 12)
+local TabFarm = makeTab("AutoFarm", 56)
+local TabTeleport = makeTab("Teleport", 100)
+local TabMisc = makeTab("Misc", 144)
+
+local function makePage(name)
+    local page = Instance.new("ScrollingFrame")
+    page.Name = name
+    page.Parent = Content
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.ScrollBarImageColor3 = PINK
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.Visible = false
+
+    local layout = Instance.new("UIListLayout")
+    layout.Parent = page
+    layout.Padding = UDim.new(0, 10)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+
+    local padding = Instance.new("UIPadding")
+    padding.Parent = page
+    padding.PaddingTop = UDim.new(0, 6)
+    padding.PaddingLeft = UDim.new(0, 4)
+    padding.PaddingRight = UDim.new(0, 8)
+    padding.PaddingBottom = UDim.new(0, 8)
+    return page
+end
+
+local MainPage = makePage("MainPage")
+local FarmPage = makePage("FarmPage")
+local TeleportPage = makePage("TeleportPage")
+local MiscPage = makePage("MiscPage")
+
+local function makeInfo(parent, title, description, height)
+    local card = Instance.new("Frame")
+    card.Parent = parent
+    card.Size = UDim2.new(1, -4, 0, height or 90)
+    card.BackgroundColor3 = CARD
+    card.BorderSizePixel = 0
+    corner(card, 9)
+    stroke(card, PINK_DARK, 1, 0.55)
+    makeLabel(card, title, UDim2.new(1, -24, 0, 30),
+        UDim2.new(0, 12, 0, 8), 20, PINK, true)
+    local desc = makeLabel(card, description, UDim2.new(1, -24, 1, -42),
+        UDim2.new(0, 12, 0, 38), 15, WHITE, false)
+    desc.TextYAlignment = Enum.TextYAlignment.Top
+    return card
+end
+
+makeInfo(MainPage, "¡Bienvenido!",
+    "JHYKO HUB v1.3.5\nDiseño rosa y negro | MAIN • AUTOFARM • TELEPORT • MISC\nPanel de utilidades para tu juego.", 112)
+makeInfo(MainPage, "Controles",
+    "Arrastra la barra superior para mover el hub. Pulsa H para ocultarlo o mostrarlo.", 88)
+makeInfo(MainPage, "AUTO-COLLECT",
+    "Busca huevos en la Zona 12. Detecta automáticamente cuando se hace de noche (spawn) y amanece para volver a la zona.", 112)
+
+local function makeOption(parent, labelText, order)
+    local row = Instance.new("Frame")
+    row.Parent = parent
+    row.LayoutOrder = order
+    row.Size = UDim2.new(1, -4, 0, 48)
+    row.BackgroundColor3 = CARD
+    row.BorderSizePixel = 0
+    corner(row, 8)
+    makeLabel(row, labelText, UDim2.new(1, -105, 1, 0),
+        UDim2.new(0, 12, 0, 0), 15, WHITE, false)
+
+    local button = Instance.new("TextButton")
+    button.Parent = row
+    button.AnchorPoint = Vector2.new(1, 0.5)
+    button.Position = UDim2.new(1, -10, 0.5, 0)
+    button.Size = UDim2.fromOffset(72, 29)
+    button.BackgroundColor3 = OFF
+    button.BorderSizePixel = 0
+    button.Text = "OFF"
+    button.Font = Enum.Font.SourceSansBold
+    button.TextSize = 14
+    button.TextColor3 = WHITE
+    corner(button, 7)
+    return row, button
+end
+
+local function setToggle(button, enabled)
+    button.Text = enabled and "ON" or "OFF"
+    button.BackgroundColor3 = enabled and ON or OFF
+end
+
+local function makeProButton(parent, text, position, size)
+    local b = Instance.new("TextButton")
+    b.Parent = parent
+    b.Position = position
+    b.Size = size
+    b.BackgroundColor3 = Color3.fromRGB(49, 31, 57)
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = WHITE
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 14
+    corner(b, 7)
+    stroke(b, PINK_DARK, 1, 0.4)
+    return b
+end
+local EGG_ZONE_COORDS = Vector3.new(24.8, 23.0, 3337.2)
+local EGG_POLL_INTERVAL = 0.5
+local EGG_PICKUP_TIMEOUT = 6
+local EGG_SAVE_HEIGHT = 50
+local EGG_SAVE_WAIT = 1.25
+
+local eggAutoEnabled = false
+local eggCollecting = false
+
+local EggCard = Instance.new("Frame")
+EggCard.Name = "AutoCollectEggCard"
+EggCard.Parent = FarmPage
+EggCard.LayoutOrder = 1
+EggCard.Size = UDim2.new(1, -4, 0, 142)
+EggCard.BackgroundColor3 = CARD
+EggCard.BorderSizePixel = 0
+corner(EggCard, 9)
+stroke(EggCard, PINK_DARK, 1, 0.55)
+
+makeLabel(EggCard, "AUTO-COLLECT | ZONA 12", UDim2.new(1, -20, 0, 28),
+    UDim2.new(0, 12, 0, 6), 18, PINK, true)
+
+local EggStatus = makeLabel(EggCard, "Estado: Apagado", UDim2.new(1, -24, 0, 38),
+    UDim2.new(0, 12, 0, 37), 13, WHITE, false)
+EggStatus.TextWrapped = true
+EggStatus.TextYAlignment = Enum.TextYAlignment.Center
+
+local EggAutoButton = makeProButton(EggCard, "AUTO-COLLECT: OFF",
+    UDim2.new(0, 12, 0, 84), UDim2.new(1, -24, 0, 42))
+
+local function getEggZone12()
+    local eggsFolder = Workspace:FindFirstChild("Eggs")
+    return eggsFolder and eggsFolder:FindFirstChild("Zone12")
+end
+
+local function getEggPart(object)
+    if not object then return nil end
+    if object:IsA("BasePart") then return object end
+    if object:IsA("Model") then
+        return object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
+    end
+    return object:FindFirstChildWhichIsA("BasePart", true)
+end
+
+local function getReadyEggs()
+    local results = {}
+    local zone = getEggZone12()
+    if not zone then return results end
+
+    for _, nest in ipairs(zone:GetChildren()) do
+        local spawned = nest:FindFirstChild("SpawnedEgg")
+        if spawned then
+            for _, egg in ipairs(spawned:GetChildren()) do
+                local lowerName = string.lower(egg.Name)
+                local ignored = string.find(lowerName, "initial") or string.find(lowerName, "anim")
+                local part = not ignored and getEggPart(egg) or nil
+                if part then
+                    local prompt = egg:FindFirstChildWhichIsA("ProximityPrompt", true)
+                        or nest:FindFirstChildWhichIsA("ProximityPrompt", true)
+                    local combinedName = string.lower(egg.Name .. " " .. nest.Name)
+                    local giant = string.find(combinedName, "giant") ~= nil
+                        or egg:FindFirstChild("GiantGlow", true) ~= nil
+                        or nest:FindFirstChild("GiantGlow", true) ~= nil
+                    table.insert(results, {
+                        Egg = egg,
+                        Part = part,
+                        Prompt = prompt,
+                        Giant = giant,
+                    })
+                end
+            end
+        end
+    end
+    return results
+end
+
+local function eggStillExists(info)
+    return info and info.Egg and info.Egg.Parent ~= nil
+        and info.Part and info.Part.Parent ~= nil
+end
+
+local function chooseEgg(eggs)
+    for _, info in ipairs(eggs) do
+        if info.Giant then return info end
+    end
+    return eggs[1]
+end
+
+local function attemptEggPrompt(prompt)
+    if not prompt or not prompt.Parent or not prompt.Enabled then return end
+    pcall(function()
+        prompt:InputHoldBegin()
+        task.wait(math.max(prompt.HoldDuration, 0.1))
+        if prompt.Parent then prompt:InputHoldEnd() end
+    end)
+end
+
+local function isNightTime()
+    local clock = Lighting.ClockTime
+    return clock <= 5 or clock >= 19
+end
+
+local function collectOneEgg()
+    local eggs = getReadyEggs()
+    while eggAutoEnabled and not closed and #eggs == 0 do
+        if isNightTime() then
+            EggStatus.Text = "🌙 Es de noche (en el spawn)... Esperando amanecer."
+            return
+        end
+        EggStatus.Text = "Esperando huevos en Zona 12... No me muevo."
+        task.wait(EGG_POLL_INTERVAL)
+        eggs = getReadyEggs()
+    end
+    if not eggAutoEnabled or closed or #eggs == 0 then return end
+
+    local chosen = chooseEgg(eggs)
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        EggStatus.Text = "Personaje no disponible; esperando..."
+        task.wait(1)
+        return
+    end
+
+    EggStatus.Text = chosen.Giant and "Yendo a Zona 12 (GIANT)..." or "Yendo a Zona 12..."
+    character:PivotTo(CFrame.new(EGG_ZONE_COORDS))
+    task.wait(0.4)
+    if not eggAutoEnabled or closed then return end
+
+    if not eggStillExists(chosen) then
+        eggs = getReadyEggs()
+        if #eggs == 0 then
+            EggStatus.Text = "El huevo ya no está; buscando otro..."
+            return
+        end
+        chosen = chooseEgg(eggs)
+    end
+
+    local part = getEggPart(chosen.Egg)
+    if not part then return end
+    character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+
+    EggStatus.Text = chosen.Giant and "Acercándose al huevo GIANT..." or "Acercándose al huevo..."
+    character:PivotTo(CFrame.new(part.Position + Vector3.new(0, 2, 0)))
+    task.wait(0.4)
+    if not eggAutoEnabled or closed then return end
+
+    if chosen.Prompt and chosen.Prompt.Parent and chosen.Prompt.Enabled then
+        attemptEggPrompt(chosen.Prompt)
+    end
+
+    EggStatus.Text = "Esperando que el juego recoja el huevo..."
+    local startedAt = os.clock()
+    local pickupDetected = false
+    while os.clock() - startedAt < EGG_PICKUP_TIMEOUT and eggAutoEnabled and not closed do
+        if not eggStillExists(chosen)
+            or (chosen.Prompt and chosen.Prompt.Parent and not chosen.Prompt.Enabled) then
+            pickupDetected = true
+            break
+        end
+        task.wait(0.2)
+    end
+    if not eggAutoEnabled or closed then return end
+
+    character = LocalPlayer.Character
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if not root then
+        EggStatus.Text = "Personaje no disponible para guardar."
+        return
+    end
+
+    EggStatus.Text = pickupDetected and "Recogida detectada; subiendo para guardar..."
+        or "Sin confirmación visible; intentando guardar..."
+    root.CFrame = root.CFrame + Vector3.new(0, EGG_SAVE_HEIGHT, 0)
+    task.wait(EGG_SAVE_WAIT)
+
+    EggStatus.Text = pickupDetected and "Ciclo completado; buscando otro huevo..."
+        or "Subida hecha; verificando el siguiente huevo..."
+end
+
+EggAutoButton.Activated:Connect(function()
+    if closed then return end
+    eggAutoEnabled = not eggAutoEnabled
+    EggAutoButton.Text = eggAutoEnabled and "AUTO-COLLECT: ON" or "AUTO-COLLECT: OFF"
+    EggAutoButton.BackgroundColor3 = eggAutoEnabled and PINK or Color3.fromRGB(49, 31, 57)
+    EggStatus.Text = eggAutoEnabled and "Activo: esperando huevos en Zona 12..." or "Estado: Apagado"
+
+    if eggAutoEnabled then
+        task.spawn(function()
+            while eggAutoEnabled and not closed do
+                if isNightTime() then
+                    EggStatus.Text = "🌙 Es de noche (en el spawn)... Esperando amanecer."
+                else
+                    local character = LocalPlayer.Character
+                    local root = character and character:FindFirstChild("HumanoidRootPart")
+
+                    if root and (root.Position - EGG_ZONE_COORDS).Magnitude > 150 then
+                        EggStatus.Text = "☀️ ¡Amaneció! Volviendo a Zona 12..."
+                        root.CFrame = CFrame.new(EGG_ZONE_COORDS)
+                        task.wait(1)
+                    end
+
+                    if not eggCollecting then
+                        eggCollecting = true
+                        local ok, err = pcall(collectOneEgg)
+                        if not ok then
+                            warn("JHYKO HUB - Auto-Collect error:", err)
+                            EggStatus.Text = "Error de recogida; revisa Output."
+                        end
+                        eggCollecting = false
+                    end
+                end
+                task.wait(0.5)
+            end
+        end)
+    end
+end)
+local SpawnCard = Instance.new("Frame")
+SpawnCard.Name = "SpawnTeleportCard"
+SpawnCard.Parent = TeleportPage
+SpawnCard.LayoutOrder = 1
+SpawnCard.Size = UDim2.new(1, -4, 0, 110)
+SpawnCard.BackgroundColor3 = CARD
+SpawnCard.BorderSizePixel = 0
+corner(SpawnCard, 9)
+stroke(SpawnCard, PINK_DARK, 1, 0.55)
+
+makeLabel(SpawnCard, "TELEPORT - SPAWN", UDim2.new(1, -20, 0, 28),
+    UDim2.new(0, 12, 0, 6), 18, PINK, true)
+makeLabel(SpawnCard, "Te lleva al punto de Spawn (24.1, 3.0, 103.2).",
+    UDim2.new(1, -24, 0, 24), UDim2.new(0, 12, 0, 32), 13, WHITE, false)
+
+local SpawnCordsButton = makeProButton(SpawnCard, "TELETRANSPORTAR AL SPAWN",
+    UDim2.new(0, 12, 0, 60), UDim2.new(1, -24, 0, 38))
+SpawnCordsButton.Activated:Connect(function()
+    if closed then return end
+    local character = LocalPlayer.Character
+    local root = getRoot()
+    if not character or not root then
+        warn("JHYKO HUB: no se encontró el personaje para teletransportar.")
+        return
+    end
+
+    character:PivotTo(CFrame.new(24.1, 3.0, 103.2))
+end)
+local function saveAndDisable(instance, propertyName)
+    local ok, value = pcall(function() return instance[propertyName] end)
+    if not ok then return end
+    antiLagOriginals[instance] = antiLagOriginals[instance] or {}
+    if antiLagOriginals[instance][propertyName] == nil then
+        antiLagOriginals[instance][propertyName] = value
+    end
+    pcall(function() instance[propertyName] = false end)
+end
+
+local function applyAntiLag(enabled)
+    if enabled then
+        for _, obj in ipairs(Lighting:GetDescendants()) do
+            if obj:IsA("PostEffect") then saveAndDisable(obj, "Enabled") end
+        end
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
+                or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                saveAndDisable(obj, "Enabled")
+            end
+        end
+        if not qualitySaved then
+            local ok, quality = pcall(function() return settings().Rendering.QualityLevel end)
+            if ok then originalQualityLevel = quality; qualitySaved = true end
+        end
+        pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+    else
+        for obj, props in pairs(antiLagOriginals) do
+            if obj and obj.Parent then
+                for prop, value in pairs(props) do
+                    pcall(function() obj[prop] = value end)
+                end
+            end
+        end
+        table.clear(antiLagOriginals)
+        if qualitySaved then
+            pcall(function() settings().Rendering.QualityLevel = originalQualityLevel end)
+        end
+        originalQualityLevel, qualitySaved = nil, false
+    end
+end
+
+local _, AntiLagButton = makeOption(MiscPage, "Reducir Lag (Anti-Lag)", 1)
+AntiLagButton.MouseButton1Click:Connect(function()
+    isAntiLag = not isAntiLag
+    setToggle(AntiLagButton, isAntiLag)
+    applyAntiLag(isAntiLag)
+end)
+
+local _, FPSButton = makeOption(MiscPage, "Mostrar FPS", 2)
+FPSButton.MouseButton1Click:Connect(function()
+    showFPS = not showFPS
+    setToggle(FPSButton, showFPS)
+    if showFPS then
+        fpsConnection = RunService.RenderStepped:Connect(function(dt)
+            if dt > 0 and FPSLabel then FPSLabel.Text = string.format("FPS: %d", math.floor(1 / dt + 0.5)) end
+        end)
+        FPSLabel.Visible = true
+    else
+        if fpsConnection then fpsConnection:Disconnect(); fpsConnection = nil end
+        FPSLabel.Visible = false
+    end
+end)
+
+local _, IdleButton = makeOption(MiscPage, "Evitar inactividad", 3)
+IdleButton.MouseButton1Click:Connect(function()
+    antiIdle = not antiIdle
+    setToggle(IdleButton, antiIdle)
+    if antiIdle then
+        idleConnection = LocalPlayer.Idled:Connect(function()
+            pcall(function()
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new())
+            end)
+        end)
+    elseif idleConnection then
+        idleConnection:Disconnect()
+        idleConnection = nil
+    end
+end)
+
+local _, CoordsButton = makeOption(MiscPage, "Mostrar coordenadas", 4)
+CoordsButton.MouseButton1Click:Connect(function()
+    showCoords = not showCoords
+    setToggle(CoordsButton, showCoords)
+    if showCoords then
+        coordsConnection = RunService.RenderStepped:Connect(function()
+            local root = getRoot()
+            if root and CoordsLabel then
+                local p = root.Position
+                CoordsLabel.Text = string.format("X: %.1f   Y: %.1f   Z: %.1f", p.X, p.Y, p.Z)
+            end
+        end)
+        CoordsLabel.Visible = true
+    else
+        if coordsConnection then coordsConnection:Disconnect(); coordsConnection = nil end
+        CoordsLabel.Visible = false
+    end
+end)
+
+local _, CloseButton = makeOption(MiscPage, "Cerrar Hub / Script", 5)
+CloseButton.Text = "Cerrar"
+CloseButton.BackgroundColor3 = Color3.fromRGB(190, 55, 85)
+CloseButton.MouseButton1Click:Connect(function()
+    if closed then return end
+    closed = true
+    if isAntiLag then pcall(function() applyAntiLag(false) end) end
+    for _, connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
+    if fpsConnection then fpsConnection:Disconnect() end
+    if idleConnection then idleConnection:Disconnect() end
+    if coordsConnection then coordsConnection:Disconnect() end
+    ScreenGui:Destroy()
+end)
+FPSLabel = Instance.new("TextLabel")
+FPSLabel.Name = "FPSLabel"
+FPSLabel.Parent = ScreenGui
+FPSLabel.Size = UDim2.fromOffset(125, 34)
+FPSLabel.Position = UDim2.new(1, -140, 0, 12)
+FPSLabel.BackgroundColor3 = PANEL
+FPSLabel.BorderSizePixel = 0
+FPSLabel.Font = Enum.Font.SourceSansBold
+FPSLabel.TextSize = 15
+FPSLabel.TextColor3 = PINK
+FPSLabel.Text = "FPS: --"
+FPSLabel.Visible = false
+corner(FPSLabel, 7)
+stroke(FPSLabel, PINK, 1, 0.15)
+
+CoordsLabel = Instance.new("TextLabel")
+CoordsLabel.Name = "CoordsLabel"
+CoordsLabel.Parent = ScreenGui
+CoordsLabel.Size = UDim2.fromOffset(250, 34)
+CoordsLabel.Position = UDim2.new(0, 12, 0, 12)
+CoordsLabel.BackgroundColor3 = PANEL
+CoordsLabel.BorderSizePixel = 0
+CoordsLabel.Font = Enum.Font.SourceSans
+CoordsLabel.TextSize = 14
+CoordsLabel.TextColor3 = PINK
+CoordsLabel.Text = "X: --   Y: --   Z: --"
+CoordsLabel.Visible = false
+corner(CoordsLabel, 7)
+stroke(CoordsLabel, PINK, 1, 0.15)
+local function selectTab(which)
+    MainPage.Visible = which == "Main"
+    FarmPage.Visible = which == "Farm"
+    TeleportPage.Visible = which == "Teleport"
+    MiscPage.Visible = which == "Misc"
+    for name, button in pairs({Main = TabMain, Farm = TabFarm, Teleport = TabTeleport, Misc = TabMisc}) do
+        local active = name == which
+        button.TextColor3 = active and PINK or MUTED
+        button.BackgroundTransparency = active and 0 or 1
+        button.BackgroundColor3 = active and CARD or PANEL
+    end
+end
+
+TabMain.MouseButton1Click:Connect(function() selectTab("Main") end)
+TabFarm.MouseButton1Click:Connect(function() selectTab("Farm") end)
+TabTeleport.MouseButton1Click:Connect(function() selectTab("Teleport") end)
+TabMisc.MouseButton1Click:Connect(function() selectTab("Misc") end)
+selectTab("Main")
+local dragging = false
+local dragStart, startPosition
+
+addConnection(TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPosition = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end))
+
+addConnection(UserInputService.InputChanged:Connect(function(input)
+    if dragging and dragStart and startPosition and
+        (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+    end
+end))
+local hubVisibilityTween
+local hubAnimating = false
+local HUB_OPEN_SIZE = UDim2.fromOffset(650, 440)
+
+local HubScale = MainFrame:FindFirstChildOfClass("UIScale")
+if not HubScale then
+    HubScale = Instance.new("UIScale")
+    HubScale.Scale = 1
+    HubScale.Parent = MainFrame
+end
+
+local function toggleHubAnimated()
+    if closed or hubAnimating then return end
+    hubAnimating = true
+
+    if hubVisibilityTween then
+        hubVisibilityTween:Cancel()
+        hubVisibilityTween = nil
+    end
+
+    if MainFrame.Visible then
+        hubVisibilityTween = TweenService:Create(
+            HubScale,
+            TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            {Scale = 0.03}
+        )
+        hubVisibilityTween:Play()
+        hubVisibilityTween.Completed:Once(function()
+            MainFrame.Visible = false
+            HubScale.Scale = 1
+            hubAnimating = false
+            hubVisibilityTween = nil
+        end)
+    else
+        HubScale.Scale = 0.03
+        MainFrame.Size = HUB_OPEN_SIZE
+        MainFrame.BackgroundTransparency = 0
+        MainFrame.Visible = true
+
+        hubVisibilityTween = TweenService:Create(
+            HubScale,
+            TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Scale = 1}
+        )
+        hubVisibilityTween:Play()
+        hubVisibilityTween.Completed:Once(function()
+            hubAnimating = false
+            hubVisibilityTween = nil
+        end)
+    end
+end
+
+addConnection(UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or closed then return end
+    if input.KeyCode == Enum.KeyCode.H then
+        toggleHubAnimated()
+    end
+end))
+MainFrame.Size = UDim2.fromOffset(600, 400)
+MainFrame.BackgroundTransparency = 0.15
+TweenService:Create(MainFrame,
+    TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    {Size = UDim2.fromOffset(650, 440), BackgroundTransparency = 0}):Play()
+
+print("JHYKO HUB v1.3.5 - SPAWN PERSONALIZADO UBICADO EN TELEPORT")
