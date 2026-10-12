@@ -1,0 +1,971 @@
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+local RunService = game:GetService("RunService")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then return end
+
+local MAX_STAGE = 81
+local farmTargetStage = 81
+local farmSpeed = 100
+local autoRebirth = true
+local rebirthCount = 0
+local sessionStart = os.clock()
+
+local PINK = Color3.fromRGB(255, 70, 165)
+local PINK_DARK = Color3.fromRGB(120, 35, 90)
+local PANEL = Color3.fromRGB(20, 14, 27)
+local CARD = Color3.fromRGB(35, 24, 43)
+local WHITE = Color3.fromRGB(245, 235, 248)
+local MUTED = Color3.fromRGB(158, 138, 168)
+local OFF = Color3.fromRGB(65, 48, 73)
+local ON = PINK
+
+local isAntiLag, showFPS, antiIdle, showCoords = false, false, false, false
+local hudEnabled = true
+local farming = false
+local closed = false
+local startTime = 0
+
+local connections = {}
+local fpsConnection, idleConnection, coordsConnection, hudConnection
+local movementConnection, noclipConnection
+local originalCollisions = {}
+local antiLagOriginals = {}
+local originalQualityLevel
+local qualitySaved = false
+
+local FPSLabel, CoordsLabel
+local FarmStatus, FarmTimer, FarmStart, FarmStop
+local TargetLabel, SpeedLabel, RebirthToggle
+local HUDFrame, HUDStage, HUDProgress, HUDRebirths, HUDSession, HUDStatus
+local moveToCheckpoint, startRebirthLoop, stopFarm
+
+local function addConnection(connection)
+    table.insert(connections, connection)
+    return connection
+end
+
+local function corner(object, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = object
+    return c
+end
+
+local function stroke(object, color, thickness, transparency)
+    local st = Instance.new("UIStroke")
+    st.Color = color or PINK
+    st.Thickness = thickness or 1
+    st.Transparency = transparency or 0
+    st.Parent = object
+    return st
+end
+
+local function makeLabel(parent, text, size, position, fontSize, color, bold)
+    local label = Instance.new("TextLabel")
+    label.Parent = parent
+    label.BackgroundTransparency = 1
+    label.Size = size
+    label.Position = position
+    label.Text = text
+    label.Font = bold and Enum.Font.SourceSansBold or Enum.Font.SourceSans
+    label.TextSize = fontSize or 15
+    label.TextColor3 = color or WHITE
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.TextWrapped = true
+    return label
+end
+
+local function destroyOld(container)
+    if not container then return end
+    local old = container:FindFirstChild("JhykoHubGUI")
+    if old then old:Destroy() end
+end
+
+pcall(function()
+    destroyOld(LocalPlayer:WaitForChild("PlayerGui"))
+end)
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "JhykoHubGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.fromOffset(650, 440)
+MainFrame.BackgroundColor3 = PANEL
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+corner(MainFrame, 14)
+stroke(MainFrame, PINK, 1.5, 0.12)
+
+local mainGradient = Instance.new("UIGradient")
+mainGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(29, 17, 36)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(15, 11, 21))
+})
+mainGradient.Rotation = 25
+mainGradient.Parent = MainFrame
+
+local TopBar = Instance.new("Frame")
+TopBar.Parent = MainFrame
+TopBar.Size = UDim2.new(1, 0, 0, 42)
+TopBar.BackgroundColor3 = Color3.fromRGB(32, 20, 38)
+TopBar.BorderSizePixel = 0
+TopBar.Active = true
+corner(TopBar, 14)
+
+local topGradient = Instance.new("UIGradient")
+topGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(65, 25, 58)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 17, 34))
+})
+topGradient.Parent = TopBar
+
+local HubTitle = makeLabel(TopBar, "JHYKO HUB | v1.3.5", UDim2.new(1, -105, 1, 0),
+    UDim2.new(0, 15, 0, 0), 19, PINK, true)
+
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MobileMinimizeButton"
+MinimizeButton.Parent = TopBar
+MinimizeButton.AnchorPoint = Vector2.new(1, 0)
+MinimizeButton.Position = UDim2.new(1, -42, 0, 7)
+MinimizeButton.Size = UDim2.fromOffset(28, 28)
+MinimizeButton.BackgroundColor3 = PINK_DARK
+MinimizeButton.BorderSizePixel = 0
+MinimizeButton.Text = "−"
+MinimizeButton.TextColor3 = WHITE
+MinimizeButton.Font = Enum.Font.SourceSansBold
+MinimizeButton.TextSize = 22
+MinimizeButton.AutoButtonColor = true
+MinimizeButton.ZIndex = 5
+corner(MinimizeButton, 6)
+
+local HideHint = makeLabel(TopBar, "H", UDim2.fromOffset(26, 25),
+    UDim2.new(1, -38, 0, 8), 14, WHITE, true)
+HideHint.TextXAlignment = Enum.TextXAlignment.Center
+HideHint.BackgroundTransparency = 0
+HideHint.BackgroundColor3 = PINK_DARK
+corner(HideHint, 6)
+
+local Sidebar = Instance.new("Frame")
+Sidebar.Parent = MainFrame
+Sidebar.Position = UDim2.new(0, 0, 0, 42)
+Sidebar.Size = UDim2.new(0, 145, 1, -42)
+Sidebar.BackgroundColor3 = Color3.fromRGB(17, 12, 23)
+Sidebar.BorderSizePixel = 0
+
+local Content = Instance.new("Frame")
+Content.Parent = MainFrame
+Content.Position = UDim2.new(0, 155, 0, 52)
+Content.Size = UDim2.new(1, -165, 1, -62)
+Content.BackgroundTransparency = 1
+
+local hubMinimized = false
+local HUB_NORMAL_SIZE = UDim2.fromOffset(650, 440)
+local HUB_MINIMIZED_SIZE = UDim2.fromOffset(250, 42)
+local minimizeTween
+
+MinimizeButton.Activated:Connect(function()
+    if closed then return end
+    hubMinimized = not hubMinimized
+    if minimizeTween then
+        minimizeTween:Cancel()
+        minimizeTween = nil
+    end
+    if hubMinimized then
+        Sidebar.Visible = false
+        Content.Visible = false
+        HubTitle.Text = "JHYKO HUB"
+        MinimizeButton.Text = "+"
+        HideHint.Visible = false
+        minimizeTween = TweenService:Create(MainFrame,
+            TweenInfo.new(0.28, Enum.EasingStyle.Quint, Enum.EasingDirection.In),
+            {Size = HUB_MINIMIZED_SIZE})
+        minimizeTween:Play()
+    else
+        MainFrame.Size = HUB_MINIMIZED_SIZE
+        HubTitle.Text = "JHYKO HUB | v1.3.5"
+        MinimizeButton.Text = "−"
+        Sidebar.Visible = true
+        Content.Visible = true
+        HideHint.Visible = true
+        minimizeTween = TweenService:Create(MainFrame,
+            TweenInfo.new(0.32, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+            {Size = HUB_NORMAL_SIZE})
+        minimizeTween:Play()
+    end
+end)
+
+local function makeTab(text, y)
+    local b = Instance.new("TextButton")
+    b.Parent = Sidebar
+    b.Size = UDim2.new(1, -12, 0, 38)
+    b.Position = UDim2.new(0, 6, 0, y)
+    b.BackgroundColor3 = CARD
+    b.BackgroundTransparency = 1
+    b.BorderSizePixel = 0
+    b.Text = "   " .. text
+    b.TextXAlignment = Enum.TextXAlignment.Left
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 16
+    b.TextColor3 = MUTED
+    b.AutoButtonColor = false
+    corner(b, 7)
+    return b
+end
+
+local TabMain = makeTab("Main", 12)
+local TabFarm = makeTab("Farm PRO", 56)
+local TabMisc = makeTab("Misc", 100)
+
+local function makePage(name)
+    local page = Instance.new("ScrollingFrame")
+    page.Name = name
+    page.Parent = Content
+    page.Size = UDim2.new(1, 0, 1, 0)
+    page.BackgroundTransparency = 1
+    page.BorderSizePixel = 0
+    page.ScrollBarThickness = 4
+    page.ScrollBarImageColor3 = PINK
+    page.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    page.CanvasSize = UDim2.new(0, 0, 0, 0)
+    page.Visible = false
+    local layout = Instance.new("UIListLayout")
+    layout.Parent = page
+    layout.Padding = UDim.new(0, 10)
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    local padding = Instance.new("UIPadding")
+    padding.Parent = page
+    padding.PaddingTop = UDim.new(0, 6)
+    padding.PaddingLeft = UDim.new(0, 4)
+    padding.PaddingRight = UDim.new(0, 8)
+    padding.PaddingBottom = UDim.new(0, 8)
+    return page
+end
+
+local MainPage = makePage("MainPage")
+local FarmPage = makePage("FarmPage")
+local MiscPage = makePage("MiscPage")
+
+local function makeInfo(parent, title, description, height)
+    local card = Instance.new("Frame")
+    card.Parent = parent
+    card.Size = UDim2.new(1, -4, 0, height or 90)
+    card.BackgroundColor3 = CARD
+    card.BorderSizePixel = 0
+    corner(card, 9)
+    stroke(card, PINK_DARK, 1, 0.55)
+    makeLabel(card, title, UDim2.new(1, -24, 0, 30),
+        UDim2.new(0, 12, 0, 8), 20, PINK, true)
+    local desc = makeLabel(card, description, UDim2.new(1, -24, 1, -42),
+        UDim2.new(0, 12, 0, 38), 15, WHITE, false)
+    desc.TextYAlignment = Enum.TextYAlignment.Top
+    return card
+end
+
+makeInfo(MainPage, "¡Bienvenido!",
+    "JHYKO HUB v1.3.0\nDiseño rosa y negro | MAIN • FARM PRO • MISC\nPanel de pruebas para tu juego.", 112)
+makeInfo(MainPage, "Controles",
+    "Arrastra la barra superior para mover el hub. Pulsa H para ocultarlo o mostrarlo.", 88)
+makeInfo(MainPage, "Nuevas funciones",
+    "FARM PRO: velocidad y etapa objetivo configurables.\nHUD PRO: etapa, progreso, rebirths y tiempo de sesión.", 100)
+
+local function makeOption(parent, labelText, order)
+    local row = Instance.new("Frame")
+    row.Parent = parent
+    row.LayoutOrder = order
+    row.Size = UDim2.new(1, -4, 0, 48)
+    row.BackgroundColor3 = CARD
+    row.BorderSizePixel = 0
+    corner(row, 8)
+    makeLabel(row, labelText, UDim2.new(1, -105, 1, 0),
+        UDim2.new(0, 12, 0, 0), 15, WHITE, false)
+    local button = Instance.new("TextButton")
+    button.Parent = row
+    button.AnchorPoint = Vector2.new(1, 0.5)
+    button.Position = UDim2.new(1, -10, 0.5, 0)
+    button.Size = UDim2.fromOffset(72, 29)
+    button.BackgroundColor3 = OFF
+    button.BorderSizePixel = 0
+    button.Text = "OFF"
+    button.Font = Enum.Font.SourceSansBold
+    button.TextSize = 14
+    button.TextColor3 = WHITE
+    corner(button, 7)
+    return row, button
+end
+
+local function setToggle(button, enabled)
+    button.Text = enabled and "ON" or "OFF"
+    button.BackgroundColor3 = enabled and ON or OFF
+end
+
+local FarmCard = Instance.new("Frame")
+FarmCard.Parent = FarmPage
+FarmCard.Size = UDim2.new(1, -4, 0, 315)
+FarmCard.BackgroundColor3 = CARD
+FarmCard.BorderSizePixel = 0
+corner(FarmCard, 9)
+stroke(FarmCard, PINK_DARK, 1, 0.55)
+
+makeLabel(FarmCard, "FARM PRO", UDim2.new(1, -20, 0, 30),
+    UDim2.new(0, 12, 0, 6), 19, PINK, true)
+FarmStatus = makeLabel(FarmCard, "Estado: Detenido",
+    UDim2.new(1, -24, 0, 22), UDim2.new(0, 12, 0, 39), 14, WHITE, false)
+FarmTimer = makeLabel(FarmCard, "Tiempo: 00:00",
+    UDim2.new(1, -24, 0, 22), UDim2.new(0, 12, 0, 61), 14, WHITE, false)
+
+local function makeFarmButton(text, xScale, xOffset, color)
+    local b = Instance.new("TextButton")
+    b.Parent = FarmCard
+    b.Position = UDim2.new(xScale, xOffset, 0, 96)
+    b.Size = UDim2.new(0.5, -18, 0, 38)
+    b.BackgroundColor3 = color
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = WHITE
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 15
+    corner(b, 7)
+    return b
+end
+
+FarmStart = makeFarmButton("INICIAR", 0, 12, PINK)
+FarmStop = makeFarmButton("STOP", 0.5, 6, OFF)
+
+local function makeProButton(parent, text, position, size)
+    local b = Instance.new("TextButton")
+    b.Parent = parent
+    b.Position = position
+    b.Size = size
+    b.BackgroundColor3 = Color3.fromRGB(49, 31, 57)
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = WHITE
+    b.Font = Enum.Font.SourceSansBold
+    b.TextSize = 14
+    corner(b, 7)
+    stroke(b, PINK_DARK, 1, 0.4)
+    return b
+end
+
+local TargetLabel = makeLabel(FarmCard, "Etapa objetivo: 81",
+    UDim2.new(0, 205, 0, 24), UDim2.new(0, 12, 0, 140), 15, WHITE, true)
+local TargetMinus = makeProButton(FarmCard, "-",
+    UDim2.new(0, 12, 0, 170), UDim2.fromOffset(38, 30))
+local TargetPlus = makeProButton(FarmCard, "+",
+    UDim2.new(0, 56, 0, 170), UDim2.fromOffset(38, 30))
+local SpeedLabel = makeLabel(FarmCard, "Velocidad: 100",
+    UDim2.new(0, 180, 0, 24), UDim2.new(0, 235, 0, 140), 15, WHITE, true)
+local SpeedMinus = makeProButton(FarmCard, "- Vel.",
+    UDim2.new(0, 235, 0, 170), UDim2.fromOffset(65, 30))
+local SpeedPlus = makeProButton(FarmCard, "+ Vel.",
+    UDim2.new(0, 307, 0, 170), UDim2.fromOffset(65, 30))
+RebirthToggle = makeProButton(FarmCard, "AUTO REBIRTH: ON",
+    UDim2.new(0, 12, 0, 215), UDim2.new(1, -24, 0, 32))
+local FarmNote = makeLabel(FarmCard, "Objetivo: 1–81  |  Velocidad: 10–250",
+    UDim2.new(1, -24, 0, 22), UDim2.new(0, 12, 0, 260), 13, MUTED, false)
+
+TargetMinus.MouseButton1Click:Connect(function()
+    farmTargetStage = math.max(1, farmTargetStage - 1)
+    TargetLabel.Text = "Etapa objetivo: " .. farmTargetStage
+end)
+TargetPlus.MouseButton1Click:Connect(function()
+    farmTargetStage = math.min(MAX_STAGE, farmTargetStage + 1)
+    TargetLabel.Text = "Etapa objetivo: " .. farmTargetStage
+end)
+SpeedMinus.MouseButton1Click:Connect(function()
+    farmSpeed = math.max(10, farmSpeed - 10)
+    SpeedLabel.Text = "Velocidad: " .. farmSpeed
+end)
+SpeedPlus.MouseButton1Click:Connect(function()
+    farmSpeed = math.min(250, farmSpeed + 10)
+    SpeedLabel.Text = "Velocidad: " .. farmSpeed
+end)
+RebirthToggle.MouseButton1Click:Connect(function()
+    autoRebirth = not autoRebirth
+    RebirthToggle.Text = "AUTO REBIRTH: " .. (autoRebirth and "ON" or "OFF")
+    RebirthToggle.BackgroundColor3 = autoRebirth and PINK_DARK or OFF
+end)
+
+local function getStage()
+    local stats = LocalPlayer:FindFirstChild("leaderstats")
+    local value = stats and stats:FindFirstChild("Stage")
+    return value and tonumber(value.Value)
+end
+
+local function updateTimer()
+    if not farming then return end
+    local elapsed = math.floor(os.clock() - startTime)
+    FarmTimer.Text = string.format("Tiempo: %02d:%02d",
+        math.floor(elapsed / 60), elapsed % 60)
+end
+
+local function getVehicle()
+    local character = LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid and humanoid.SeatPart then
+        local seat = humanoid.SeatPart
+        local model = seat
+        while model and model.Parent and model.Parent ~= Workspace do
+            model = model.Parent
+            if model:IsA("Model") then return model end
+        end
+        return seat.Parent
+    end
+    return nil
+end
+
+local function setNoClip(enabled)
+    if noclipConnection then
+        noclipConnection:Disconnect()
+        noclipConnection = nil
+    end
+    if enabled then
+        noclipConnection = RunService.Stepped:Connect(function()
+            local function disableCollisions(container)
+                if not container then return end
+                for _, part in ipairs(container:GetDescendants()) do
+                    if part:IsA("BasePart") then
+                        if originalCollisions[part] == nil then
+                            originalCollisions[part] = part.CanCollide
+                        end
+                        part.CanCollide = false
+                    end
+                end
+            end
+            disableCollisions(LocalPlayer.Character)
+            disableCollisions(getVehicle())
+        end)
+    else
+        for part, originalValue in pairs(originalCollisions) do
+            if part and part.Parent then
+                pcall(function() part.CanCollide = originalValue end)
+            end
+        end
+        table.clear(originalCollisions)
+    end
+end
+
+local function getRoot()
+    local character = LocalPlayer.Character
+    return character and character:FindFirstChild("HumanoidRootPart")
+end
+
+local function getTargetPart(root)
+    local vehicle = getVehicle()
+    if vehicle then
+        local part = vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart", true)
+        if part then return part end
+    end
+    return root
+end
+
+local function getCheckpointFolder()
+    return Workspace:FindFirstChild("Checkpoints")
+end
+
+local function stopMovementConnection()
+    if movementConnection then
+        movementConnection:Disconnect()
+        movementConnection = nil
+    end
+end
+
+stopFarm = function(message)
+    farming = false
+    stopMovementConnection()
+    setNoClip(false)
+    FarmStatus.Text = "Estado: " .. (message or "Detenido")
+    FarmStart.Text = "INICIAR"
+    FarmStart.BackgroundColor3 = PINK
+end
+
+startRebirthLoop = function()
+    if not farming then return end
+    if not autoRebirth then
+        stopFarm("Objetivo alcanzado")
+        return
+    end
+    local map = Workspace:FindFirstChild("Map")
+    local rebirthBtn = map and map:FindFirstChild("RebirthButton", true)
+    if rebirthBtn and rebirthBtn:IsA("Model") then
+        rebirthBtn = rebirthBtn.PrimaryPart or rebirthBtn:FindFirstChildWhichIsA("BasePart", true)
+    end
+    if not rebirthBtn or not rebirthBtn:IsA("BasePart") then
+        stopFarm("Falta RebirthButton")
+        return
+    end
+    stopMovementConnection()
+    FarmStatus.Text = "Estado: Yendo al Rebirth..."
+    movementConnection = RunService.Heartbeat:Connect(function()
+        if not farming then return end
+        updateTimer()
+        local currentStage = getStage()
+        if currentStage and currentStage < farmTargetStage then
+            rebirthCount += 1
+            stopMovementConnection()
+            task.delay(0.5, function()
+                if farming then moveToCheckpoint() end
+            end)
+            return
+        end
+        local root = getRoot()
+        if not root then return end
+        local targetPart = getTargetPart(root) or root
+        local delta = rebirthBtn.Position - targetPart.Position
+        if delta.Magnitude < 5 then
+            targetPart.AssemblyLinearVelocity = Vector3.new(0, -2, 0)
+            FarmStatus.Text = "Estado: Rebirth en curso..."
+            return
+        end
+        targetPart.AssemblyLinearVelocity = delta.Unit * farmSpeed + Vector3.new(0, 2, 0)
+    end)
+end
+
+moveToCheckpoint = function()
+    if not farming then return end
+    local stage = getStage()
+    local checkpoints = getCheckpointFolder()
+    if stage == nil or not checkpoints then
+        stopFarm("Falta Stage o Checkpoints")
+        return
+    end
+    if stage >= farmTargetStage then
+        if autoRebirth then startRebirthLoop() else stopFarm("Objetivo alcanzado") end
+        return
+    end
+    local nextStage = math.max(2, stage + 1)
+    local function moveNext()
+        if not farming then return end
+        if nextStage > farmTargetStage then
+            if autoRebirth then startRebirthLoop() else stopFarm("Objetivo alcanzado") end
+            return
+        end
+        local checkpoint = checkpoints:FindFirstChild(tostring(nextStage))
+        if not checkpoint or not checkpoint:IsA("BasePart") then
+            stopFarm("Falta checkpoint " .. nextStage)
+            return
+        end
+        local root = getRoot()
+        if not root then
+            stopFarm("Personaje no disponible")
+            return
+        end
+        stopMovementConnection()
+        FarmStatus.Text = string.format("Estado: Etapa %d/%d", nextStage, farmTargetStage)
+        movementConnection = RunService.Heartbeat:Connect(function()
+            if not farming then return end
+            if not root.Parent then
+                stopMovementConnection()
+                return
+            end
+            updateTimer()
+            local currentStage = getStage()
+            if currentStage and currentStage >= farmTargetStage then
+                stopMovementConnection()
+                if autoRebirth then startRebirthLoop() else stopFarm("Objetivo alcanzado") end
+                return
+            end
+            local targetPart = getTargetPart(root) or root
+            local delta = checkpoint.Position - targetPart.Position
+            if delta.Magnitude < 5 then
+                targetPart.AssemblyLinearVelocity = Vector3.zero
+                stopMovementConnection()
+                nextStage += 1
+                task.delay(0.15, function()
+                    if farming then moveNext() end
+                end)
+                return
+            end
+            targetPart.AssemblyLinearVelocity = delta.Unit * farmSpeed + Vector3.new(0, 2, 0)
+            FarmStatus.Text = string.format("Estado: Etapa %d/%d",
+                currentStage or nextStage, farmTargetStage)
+        end)
+    end
+    moveNext()
+end
+
+FarmStart.MouseButton1Click:Connect(function()
+    if farming then return end
+    local stage = getStage()
+    local checkpoints = getCheckpointFolder()
+    if stage == nil or not checkpoints then
+        FarmStatus.Text = "Estado: Falta Stage o Checkpoints"
+        return
+    end
+    farming = true
+    startTime = os.clock()
+    FarmStart.Text = "ACTIVO"
+    FarmStart.BackgroundColor3 = PINK_DARK
+    setNoClip(true)
+    if stage >= farmTargetStage then
+        if autoRebirth then startRebirthLoop() else stopFarm("Objetivo alcanzado") end
+    else
+        moveToCheckpoint()
+    end
+end)
+
+FarmStop.MouseButton1Click:Connect(function()
+    stopFarm("Detenido")
+end)
+
+addConnection(LocalPlayer.CharacterAdded:Connect(function(character)
+    if not farming then return end
+    FarmStatus.Text = "Estado: Reapareciendo..."
+    task.spawn(function()
+        local root = character:WaitForChild("HumanoidRootPart", 10)
+        if not root then
+            if farming then stopFarm("Personaje no disponible") end
+            return
+        end
+        task.wait(0.5)
+        if not farming then return end
+        setNoClip(true)
+        local stage = getStage()
+        if stage and stage >= farmTargetStage then
+            if autoRebirth then startRebirthLoop() else stopFarm("Objetivo alcanzado") end
+        else
+            moveToCheckpoint()
+        end
+    end)
+end))
+
+local function saveAndDisable(instance, propertyName)
+    local ok, value = pcall(function() return instance[propertyName] end)
+    if not ok then return end
+    antiLagOriginals[instance] = antiLagOriginals[instance] or {}
+    if antiLagOriginals[instance][propertyName] == nil then
+        antiLagOriginals[instance][propertyName] = value
+    end
+    pcall(function() instance[propertyName] = false end)
+end
+
+local function applyAntiLag(enabled)
+    if enabled then
+        for _, obj in ipairs(Lighting:GetDescendants()) do
+            if obj:IsA("PostEffect") then saveAndDisable(obj, "Enabled") end
+        end
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Beam")
+                or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
+                saveAndDisable(obj, "Enabled")
+            end
+        end
+        if not qualitySaved then
+            local ok, quality = pcall(function() return settings().Rendering.QualityLevel end)
+            if ok then originalQualityLevel = quality; qualitySaved = true end
+        end
+        pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Level01 end)
+    else
+        for obj, props in pairs(antiLagOriginals) do
+            if obj and obj.Parent then
+                for prop, value in pairs(props) do
+                    pcall(function() obj[prop] = value end)
+                end
+            end
+        end
+        table.clear(antiLagOriginals)
+        if qualitySaved then
+            pcall(function() settings().Rendering.QualityLevel = originalQualityLevel end)
+        end
+        originalQualityLevel, qualitySaved = nil, false
+    end
+end
+
+local _, AntiLagButton = makeOption(MiscPage, "Reducir Lag (Anti-Lag)", 1)
+AntiLagButton.MouseButton1Click:Connect(function()
+    isAntiLag = not isAntiLag
+    setToggle(AntiLagButton, isAntiLag)
+    applyAntiLag(isAntiLag)
+end)
+
+local _, FPSButton = makeOption(MiscPage, "Mostrar FPS", 2)
+FPSButton.MouseButton1Click:Connect(function()
+    showFPS = not showFPS
+    setToggle(FPSButton, showFPS)
+    if showFPS then
+        fpsConnection = RunService.RenderStepped:Connect(function(dt)
+            if dt > 0 and FPSLabel then FPSLabel.Text = string.format("FPS: %d", math.floor(1 / dt + 0.5)) end
+        end)
+        FPSLabel.Visible = true
+    else
+        if fpsConnection then fpsConnection:Disconnect(); fpsConnection = nil end
+        FPSLabel.Visible = false
+    end
+end)
+
+-- ANTI-AFK: Rice method, controlled by the existing Misc toggle.
+local _, IdleButton = makeOption(MiscPage, "Evitar inactividad", 3)
+
+IdleButton.MouseButton1Click:Connect(function()
+    antiIdle = not antiIdle
+    setToggle(IdleButton, antiIdle)
+
+    -- Always clear any previous listener before toggling.
+    if idleConnection then
+        idleConnection:Disconnect()
+        idleConnection = nil
+    end
+
+    if antiIdle then
+        idleConnection = LocalPlayer.Idled:Connect(function()
+            task.spawn(function()
+                pcall(function()
+                    local camera = Workspace.CurrentCamera
+                    if not camera then return end
+
+                    VirtualUser:Button2Down(Vector2.new(0, 0), camera.CFrame)
+                    task.wait(1)
+
+                    local currentCamera = Workspace.CurrentCamera
+                    if currentCamera then
+                        VirtualUser:Button2Up(Vector2.new(0, 0), currentCamera.CFrame)
+                    end
+                end)
+            end)
+        end)
+    end
+end)
+
+local _, CoordsButton = makeOption(MiscPage, "Mostrar coordenadas", 4)
+CoordsButton.MouseButton1Click:Connect(function()
+    showCoords = not showCoords
+    setToggle(CoordsButton, showCoords)
+    if showCoords then
+        coordsConnection = RunService.RenderStepped:Connect(function()
+            local root = getRoot()
+            if root and CoordsLabel then
+                local p = root.Position
+                CoordsLabel.Text = string.format("X: %.1f   Y: %.1f   Z: %.1f", p.X, p.Y, p.Z)
+            end
+        end)
+        CoordsLabel.Visible = true
+    else
+        if coordsConnection then coordsConnection:Disconnect(); coordsConnection = nil end
+        CoordsLabel.Visible = false
+    end
+end)
+
+local _, HUDButton = makeOption(MiscPage, "Mostrar HUD PRO", 5)
+HUDButton.Text = "ON"
+HUDButton.BackgroundColor3 = PINK
+HUDButton.MouseButton1Click:Connect(function()
+    hudEnabled = not hudEnabled
+    if HUDFrame then HUDFrame.Visible = hudEnabled end
+    setToggle(HUDButton, hudEnabled)
+end)
+
+local _, CloseButton = makeOption(MiscPage, "Cerrar Hub / Script", 6)
+CloseButton.Text = "Cerrar"
+CloseButton.BackgroundColor3 = Color3.fromRGB(190, 55, 85)
+CloseButton.MouseButton1Click:Connect(function()
+    if closed then return end
+    closed = true
+    stopFarm("Detenido")
+    if isAntiLag then pcall(function() applyAntiLag(false) end) end
+    antiIdle = false
+    if idleConnection then idleConnection:Disconnect(); idleConnection = nil end
+    for _, connection in ipairs(connections) do pcall(function() connection:Disconnect() end) end
+    if fpsConnection then fpsConnection:Disconnect() end
+    if coordsConnection then coordsConnection:Disconnect() end
+    if hudConnection then hudConnection:Disconnect() end
+    ScreenGui:Destroy()
+end)
+
+FPSLabel = Instance.new("TextLabel")
+FPSLabel.Name = "FPSLabel"
+FPSLabel.Parent = ScreenGui
+FPSLabel.Size = UDim2.fromOffset(125, 34)
+FPSLabel.Position = UDim2.new(1, -140, 0, 12)
+FPSLabel.BackgroundColor3 = PANEL
+FPSLabel.BorderSizePixel = 0
+FPSLabel.Font = Enum.Font.SourceSansBold
+FPSLabel.TextSize = 15
+FPSLabel.TextColor3 = PINK
+FPSLabel.Text = "FPS: --"
+FPSLabel.Visible = false
+corner(FPSLabel, 7)
+stroke(FPSLabel, PINK, 1, 0.15)
+
+CoordsLabel = Instance.new("TextLabel")
+CoordsLabel.Name = "CoordsLabel"
+CoordsLabel.Parent = ScreenGui
+CoordsLabel.Size = UDim2.fromOffset(250, 34)
+CoordsLabel.Position = UDim2.new(0, 12, 0, 12)
+CoordsLabel.BackgroundColor3 = PANEL
+CoordsLabel.BorderSizePixel = 0
+CoordsLabel.Font = Enum.Font.SourceSans
+CoordsLabel.TextSize = 14
+CoordsLabel.TextColor3 = PINK
+CoordsLabel.Text = "X: --   Y: --   Z: --"
+CoordsLabel.Visible = false
+corner(CoordsLabel, 7)
+stroke(CoordsLabel, PINK, 1, 0.15)
+
+HUDFrame = Instance.new("Frame")
+HUDFrame.Name = "JhykoHUDPro"
+HUDFrame.Parent = ScreenGui
+HUDFrame.Position = UDim2.new(0, 12, 0, 54)
+HUDFrame.Size = UDim2.fromOffset(250, 156)
+HUDFrame.BackgroundColor3 = PANEL
+HUDFrame.BorderSizePixel = 0
+HUDFrame.Visible = true
+corner(HUDFrame, 10)
+stroke(HUDFrame, PINK, 1.2, 0.15)
+
+makeLabel(HUDFrame, "JHYKO HUD PRO", UDim2.new(1, -20, 0, 25),
+    UDim2.new(0, 10, 0, 5), 17, PINK, true)
+HUDStage = makeLabel(HUDFrame, "Etapa: --/81", UDim2.new(1, -20, 0, 22),
+    UDim2.new(0, 10, 0, 34), 14, WHITE, false)
+HUDProgress = makeLabel(HUDFrame, "Progreso: --%", UDim2.new(1, -20, 0, 22),
+    UDim2.new(0, 10, 0, 56), 14, WHITE, false)
+HUDRebirths = makeLabel(HUDFrame, "Rebirths: 0", UDim2.new(1, -20, 0, 22),
+    UDim2.new(0, 10, 0, 78), 14, WHITE, false)
+HUDSession = makeLabel(HUDFrame, "Sesión: 00:00", UDim2.new(1, -20, 0, 22),
+    UDim2.new(0, 10, 0, 100), 14, WHITE, false)
+HUDStatus = makeLabel(HUDFrame, "FARM: DETENIDO", UDim2.new(1, -20, 0, 22),
+    UDim2.new(0, 10, 0, 122), 14, PINK, true)
+
+hudConnection = RunService.RenderStepped:Connect(function()
+    if not HUDFrame or not HUDFrame.Parent then return end
+    local stage = getStage() or 0
+    local progress = math.clamp(stage / math.max(1, farmTargetStage) * 100, 0, 100)
+    local elapsed = math.floor(os.clock() - sessionStart)
+    HUDStage.Text = string.format("Etapa: %d/%d", stage, farmTargetStage)
+    HUDProgress.Text = string.format("Progreso: %.1f%%", progress)
+    HUDRebirths.Text = "Rebirths: " .. rebirthCount
+    HUDSession.Text = string.format("Sesión: %02d:%02d", math.floor(elapsed / 60), elapsed % 60)
+    HUDStatus.Text = "FARM: " .. (farming and "ACTIVO" or "DETENIDO")
+    HUDStatus.TextColor3 = farming and PINK or MUTED
+end)
+
+local function selectTab(which)
+    MainPage.Visible = which == "Main"
+    FarmPage.Visible = which == "Farm"
+    MiscPage.Visible = which == "Misc"
+    for name, button in pairs({Main = TabMain, Farm = TabFarm, Misc = TabMisc}) do
+        local active = name == which
+        button.TextColor3 = active and PINK or MUTED
+        button.BackgroundTransparency = active and 0 or 1
+        button.BackgroundColor3 = active and CARD or PANEL
+    end
+end
+
+TabMain.MouseButton1Click:Connect(function() selectTab("Main") end)
+TabFarm.MouseButton1Click:Connect(function() selectTab("Farm") end)
+TabMisc.MouseButton1Click:Connect(function() selectTab("Misc") end)
+selectTab("Main")
+
+local dragging = false
+local dragStart, startPosition
+
+addConnection(TopBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPosition = MainFrame.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end))
+
+addConnection(UserInputService.InputChanged:Connect(function(input)
+    if dragging and dragStart and startPosition and
+        (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPosition.X.Scale, startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale, startPosition.Y.Offset + delta.Y)
+    end
+end))
+
+local hubVisibilityTween
+local hubAnimating = false
+local HUB_OPEN_SIZE = UDim2.fromOffset(650, 440)
+
+local HubScale = MainFrame:FindFirstChildOfClass("UIScale")
+if not HubScale then
+    HubScale = Instance.new("UIScale")
+    HubScale.Scale = 1
+    HubScale.Parent = MainFrame
+end
+
+local function toggleHubAnimated()
+    if closed or hubAnimating then return end
+    hubAnimating = true
+    if hubVisibilityTween then
+        hubVisibilityTween:Cancel()
+        hubVisibilityTween = nil
+    end
+    if MainFrame.Visible then
+        hubVisibilityTween = TweenService:Create(
+            HubScale,
+            TweenInfo.new(0.38, Enum.EasingStyle.Back, Enum.EasingDirection.In),
+            {Scale = 0.03}
+        )
+        hubVisibilityTween:Play()
+        hubVisibilityTween.Completed:Once(function()
+            MainFrame.Visible = false
+            HubScale.Scale = 1
+            hubAnimating = false
+            hubVisibilityTween = nil
+        end)
+    else
+        HubScale.Scale = 0.03
+        MainFrame.Size = HUB_OPEN_SIZE
+        MainFrame.BackgroundTransparency = 0
+        MainFrame.Visible = true
+        hubVisibilityTween = TweenService:Create(
+            HubScale,
+            TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+            {Scale = 1}
+        )
+        hubVisibilityTween:Play()
+        hubVisibilityTween.Completed:Once(function()
+            hubAnimating = false
+            hubVisibilityTween = nil
+        end)
+    end
+end
+
+addConnection(UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or closed then return end
+    if input.KeyCode == Enum.KeyCode.H then
+        toggleHubAnimated()
+    end
+end))
+
+task.spawn(function()
+    local stats = LocalPlayer:WaitForChild("leaderstats", 15)
+    local stageValue = stats and stats:WaitForChild("Stage", 15)
+    if not stageValue then return end
+    addConnection(stageValue:GetPropertyChangedSignal("Value"):Connect(function()
+        if not farming then
+            FarmStatus.Text = string.format("Estado: Etapa %s/%d",
+                tostring(stageValue.Value), farmTargetStage)
+        end
+    end))
+    FarmStatus.Text = string.format("Estado: Etapa %s/%d",
+        tostring(stageValue.Value), farmTargetStage)
+end)
+
+MainFrame.Size = UDim2.fromOffset(600, 400)
+MainFrame.BackgroundTransparency = 0.15
+TweenService:Create(MainFrame,
+    TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
+    {Size = UDim2.fromOffset(650, 440), BackgroundTransparency = 0}):Play()
+
+print("JHYKO HUB v1.3.5 - FARM PRO + HUD PRO + MINIMIZAR MÓVIL cargado")
